@@ -1,8 +1,13 @@
-// Fully synthesized soundscape: desert wind, a thumper-driven score with a Hijaz-mode
-// melody, worm rumble and gameplay SFX. No audio files.
+// Fully synthesized cinematic score — no audio files, all original:
+// sub drones, a throat-singing style voice with overtone whistles, a wordless vocal lament,
+// war drums and distorted "braam" hits — plus desert wind, worm rumble and gameplay SFX.
 
+// D Phrygian dominant
 const HIJAZ = [293.66, 311.13, 369.99, 392.0, 440.0, 466.16, 523.25, 587.33, 622.25, 739.99];
-const ROOTS = [73.42, 73.42, 58.27, 65.41];
+const ROOTS = [36.71, 36.71, 29.14, 32.7];
+// formant sets (Hz, Q, gain) for sung vowels
+const VOWEL_AH = [[800, 9, 1], [1150, 10, 0.5], [2900, 12, 0.18]];
+const VOWEL_OO = [[350, 8, 1], [600, 9, 0.35], [2400, 12, 0.08]];
 
 export class AudioEngine {
   constructor() {
@@ -33,16 +38,16 @@ export class AudioEngine {
     this.sfx.connect(this.master);
 
     // reverb
-    const len = ctx.sampleRate * 3.2;
+    const len = ctx.sampleRate * 5.5;
     const ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) {
       const d = ir.getChannelData(c);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
     }
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = ir;
     const rg = ctx.createGain();
-    rg.gain.value = 0.45;
+    rg.gain.value = 0.55;
     this.reverb.connect(rg).connect(this.master);
 
     const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -95,31 +100,68 @@ export class AudioEngine {
 
   startDrone() {
     const ctx = this.ctx;
+    // sub layer: felt more than heard
     this.droneOsc = [];
     this.droneFilter = ctx.createBiquadFilter();
     this.droneFilter.type = 'lowpass';
-    this.droneFilter.frequency.value = 380;
-    this.droneFilter.Q.value = 2;
-    const g = ctx.createGain();
-    g.gain.value = 0.09;
-    this.droneFilter.connect(g);
-    g.connect(this.music);
-    g.connect(this.reverb);
-    for (const [mult, det, type] of [[1, -6, 'sawtooth'], [1, 7, 'sawtooth'], [1.5, 0, 'triangle'], [0.5, 0, 'sine']]) {
+    this.droneFilter.frequency.value = 220;
+    this.droneFilter.Q.value = 1.2;
+    const sub = ctx.createGain();
+    sub.gain.value = 0.16;
+    this.droneFilter.connect(sub).connect(this.music);
+    for (const [mult, det, type] of [[1, 0, 'sine'], [2, -5, 'sawtooth'], [2, 6, 'sawtooth'], [3, 0, 'triangle']]) {
       const o = ctx.createOscillator();
       o.type = type;
       o.frequency.value = ROOTS[0] * mult;
       o.detune.value = det;
-      o.connect(this.droneFilter);
+      const g = ctx.createGain();
+      g.gain.value = mult === 1 ? 1 : 0.25;
+      o.connect(g).connect(this.droneFilter);
       o.start();
       this.droneOsc.push({ o, mult });
     }
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.07;
-    const lg = ctx.createGain();
-    lg.gain.value = 180;
-    lfo.connect(lg).connect(this.droneFilter.frequency);
-    lfo.start();
+    const swell = ctx.createOscillator();
+    swell.frequency.value = 0.05;
+    const sg = ctx.createGain();
+    sg.gain.value = 0.06;
+    swell.connect(sg).connect(sub.gain);
+    swell.start();
+
+    // throat voice: a buzzing fundamental shaped by vowel formants, with a narrow
+    // overtone "whistle" that glides between harmonics
+    const voice = ctx.createOscillator();
+    voice.type = 'sawtooth';
+    voice.frequency.value = 73.42;
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 4.6;
+    const vg = ctx.createGain();
+    vg.gain.value = 0.35;
+    vib.connect(vg).connect(voice.frequency);
+    this.throat = ctx.createGain();
+    this.throat.gain.value = 0;
+    this.throatFormants = VOWEL_OO.map(([f, q, g]) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      const gg = ctx.createGain();
+      gg.gain.value = g * 0.9;
+      voice.connect(bp).connect(gg).connect(this.throat);
+      return bp;
+    });
+    this.whistle = ctx.createBiquadFilter();
+    this.whistle.type = 'bandpass';
+    this.whistle.frequency.value = 73.42 * 12;
+    this.whistle.Q.value = 60;
+    const wg = ctx.createGain();
+    wg.gain.value = 5;
+    voice.connect(this.whistle).connect(wg).connect(this.throat);
+    this.throat.connect(this.music);
+    this.throat.connect(this.reverb);
+    voice.start();
+    vib.start();
+    this.voice = voice;
+    this.breath = 0;
   }
 
   startRumble() {
@@ -173,63 +215,137 @@ export class AudioEngine {
     n.stop(t + dec + 0.05);
   }
 
-  note(t, freq, dur, vol = 0.12) {
+  // war drum: a deep skin hit with a noisy attack
+  taiko(t, vol = 1) {
     const ctx = this.ctx;
-    const o1 = ctx.createOscillator();
-    const o2 = ctx.createOscillator();
-    o1.type = 'triangle';
-    o2.type = 'sine';
-    o1.frequency.value = freq;
-    o2.frequency.value = freq * 2;
-    const vib = ctx.createOscillator();
-    vib.frequency.value = 5.2;
-    const vg = ctx.createGain();
-    vg.gain.value = freq * 0.006;
-    vib.connect(vg);
-    vg.connect(o1.frequency);
-    vg.connect(o2.frequency);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 1900;
+    const o = ctx.createOscillator();
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.06);
-    g.gain.setValueAtTime(vol, t + dur * 0.6);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.3);
-    const g2 = ctx.createGain();
-    g2.gain.value = 0.25;
-    o1.connect(f);
-    o2.connect(g2).connect(f);
-    f.connect(g);
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.35);
+    this.env(g, t, 0.004, 0.85 * vol, 0.7);
+    o.connect(g);
     g.connect(this.music);
     g.connect(this.reverb);
-    for (const o of [o1, o2, vib]) { o.start(t); o.stop(t + dur + 0.4); }
+    o.start(t);
+    o.stop(t + 0.8);
+    const n = this.noiseSrc();
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 420;
+    const ng = ctx.createGain();
+    this.env(ng, t, 0.002, 0.5 * vol, 0.16);
+    n.connect(f).connect(ng).connect(this.music);
+    n.start(t, Math.random());
+    n.stop(t + 0.25);
+  }
+
+  // wordless lament: a sung "ah" with portamento between long notes
+  lament(t, notes) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 5.3;
+    const vg = ctx.createGain();
+    vib.connect(vg).connect(o.frequency);
+    const out = ctx.createGain();
+    out.gain.value = 0;
+    for (const [f, q, g] of VOWEL_AH) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      const gg = ctx.createGain();
+      gg.gain.value = g * 1.6;
+      o.connect(bp).connect(gg).connect(out);
+    }
+    out.connect(this.music);
+    out.connect(this.reverb);
+    let at = t;
+    for (const [freq, dur] of notes) {
+      o.frequency.setTargetAtTime(freq, at, 0.08);
+      vg.gain.setTargetAtTime(freq * 0.012, at + dur * 0.4, 0.3);
+      out.gain.setTargetAtTime(0.11, at, 0.25);
+      out.gain.setTargetAtTime(0.06, at + dur * 0.85, 0.2);
+      at += dur;
+    }
+    o.frequency.setValueAtTime(notes[0][0], t);
+    out.gain.setTargetAtTime(0, at, 0.6);
+    o.start(t);
+    vib.start(t);
+    o.stop(at + 3);
+    vib.stop(at + 3);
+  }
+
+  // distorted brass-like "braam" for big moments
+  braam(power = 1) {
+    if (!this.ok()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    if (this.lastBraam && t - this.lastBraam < 2.5) return;
+    this.lastBraam = t;
+    const shaper = ctx.createWaveShaper();
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; curve[i] = Math.tanh(x * 3.5); }
+    shaper.curve = curve;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.Q.value = 4;
+    f.frequency.setValueAtTime(140, t);
+    f.frequency.exponentialRampToValueAtTime(1400 * power + 300, t + 0.5);
+    f.frequency.exponentialRampToValueAtTime(160, t + 3.2);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5 * power, t + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
+    shaper.connect(f).connect(g);
+    g.connect(this.music);
+    g.connect(this.reverb);
+    for (const [fr, det] of [[36.71, -8], [36.71, 9], [73.42, -4], [110, 6], [55, 0]]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = fr;
+      o.detune.value = det;
+      o.connect(shaper);
+      o.start(t);
+      o.stop(t + 3.8);
+    }
+    this.taiko(t, 0.9 * power);
   }
 
   schedule() {
     const ctx = this.ctx;
-    const spb = 60 / 92 / 4; // 16th note
+    const spb = 60 / 72 / 4; // 16th note at 72 bpm
     while (this.nextTime < ctx.currentTime + 0.15) {
       const t = this.nextTime;
       const s = this.step % 16;
       const I = this.intensity;
       if (s === 0) {
         this.bar++;
-        const root = ROOTS[Math.floor(this.bar / 2) % ROOTS.length];
-        for (const d of this.droneOsc) d.o.frequency.setTargetAtTime(root * d.mult, t, 0.4);
-        this.phrase = Math.random() < 0.35 + I * 0.4 ? [] : null;
-        this.melIdx = Math.floor(Math.random() * 5);
+        const root = ROOTS[Math.floor(this.bar / 4) % ROOTS.length];
+        for (const d of this.droneOsc) d.o.frequency.setTargetAtTime(root * d.mult, t, 1.2);
+        // the throat voice breathes in long phrases
+        const singing = this.bar % 4 !== 3;
+        this.throat.gain.setTargetAtTime(singing ? 0.05 + I * 0.05 : 0, t, singing ? 1.4 : 0.6);
+        const h = [10, 12, 9, 15, 12, 16][Math.floor(Math.random() * 6)];
+        this.whistle.frequency.setTargetAtTime(73.42 * h, t + 0.5, 0.9);
+        this.voice.frequency.setTargetAtTime(root * 2, t, 1.5);
+        this.throatFormants[0].frequency.setTargetAtTime(Math.random() < 0.5 ? 350 : 480, t, 1.5);
+        // a lament phrase every so often
+        if (this.bar % 4 === 1 && Math.random() < 0.45 + I * 0.3) {
+          let idx = 4 + Math.floor(Math.random() * 3);
+          const notes = [];
+          const count = 3 + Math.floor(Math.random() * 3);
+          for (let k = 0; k < count; k++) {
+            idx = Math.max(0, Math.min(HIJAZ.length - 1, idx + [-2, -1, -1, 1, 1, 2][Math.floor(Math.random() * 6)]));
+            notes.push([HIJAZ[idx], spb * (8 + Math.floor(Math.random() * 3) * 4)]);
+          }
+          this.lament(t + spb * 2, notes);
+        }
       }
       if (I > 0.12) {
-        if (s === 0 || s === 6 || s === 8 || (I > 0.6 && s === 14)) this.kick(t, 0.6 + I * 0.4);
-        if (s === 4 || s === 12) this.drum(t, 180, 0.45 * I + 0.1, 0.25);
-        if (I > 0.35 && (s === 10 || (s === 15 && Math.random() < 0.5))) this.drum(t, 320, 0.3 * I, 0.12);
-        if (I > 0.5 && s % 2 === 1) this.drum(t, 7000, 0.06 + I * 0.05, 0.05);
-      }
-      if (this.phrase && s % 2 === 0 && Math.random() < 0.42) {
-        this.melIdx = Math.max(0, Math.min(HIJAZ.length - 1, this.melIdx + Math.floor(Math.random() * 5) - 2));
-        const dur = spb * (Math.random() < 0.3 ? 6 : 2.5);
-        this.note(t, HIJAZ[this.melIdx], dur, 0.07 + I * 0.04);
+        if (s === 0 || (s === 10 && I > 0.3) || (s === 6 && I > 0.55) || (s === 13 && I > 0.75)) this.taiko(t, 0.45 + I * 0.5);
+        if (I > 0.45 && (s === 4 || s === 12)) this.drum(t, 220, 0.18 * I, 0.3);
       }
       this.step++;
       this.nextTime += spb;

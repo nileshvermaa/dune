@@ -52,15 +52,17 @@ const SHIMMER = {
 };
 
 const GRADE = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 1 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 1 }, uNight: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uTime; uniform float uWarm; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uWarm; uniform float uNight; varying vec2 vUv;
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
-      c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
+      c = mix(c, c * c * (3.0 - 2.0 * c), 0.28);
       float l = dot(c, vec3(0.299, 0.587, 0.114));
-      c = mix(vec3(l), c, 1.1);
+      vec3 mono = l * mix(vec3(1.08, 0.96, 0.8), vec3(0.78, 0.9, 1.08), uNight);
+      c = mix(mono, c, mix(0.62, 0.5, uNight));
+      c = c * 0.93 + vec3(0.035, 0.03, 0.028);
       c += uWarm * (vec3(0.025, 0.008, -0.02) * smoothstep(0.45, 1.0, l) + vec3(-0.008, 0.0, 0.018) * (1.0 - smoothstep(0.0, 0.35, l)));
       float n = fract(sin(dot(vUv * 1000.0 + fract(uTime) * 91.0, vec2(12.9898, 78.233))) * 43758.5453);
       c += (n - 0.5) * 0.022;
@@ -142,6 +144,7 @@ export class Game {
 
     this.resetWorld(Math.floor(Math.random() * 1e9));
     this.fresh = true;
+    this.cinema(true);
     this.last = performance.now();
     requestAnimationFrame((t) => this.loop(t));
     setTimeout(() => $('loading').classList.add('done'), 150);
@@ -264,6 +267,7 @@ export class Game {
       this.resize();
     }
     $('quality-btn').textContent = `Quality: ${high ? 'High' : 'Low'}`;
+    this.app.classList.toggle('css-grade', !high);
   }
 
   resize() {
@@ -319,11 +323,14 @@ export class Game {
     this.tutorial = this.save.played <= 3;
     this.ui.title.classList.add('hidden');
     this.ui.over.classList.add('hidden');
+    this.cinema(false);
     this.ui.pause.classList.add('hidden');
     this.ui.hud.classList.remove('hidden');
     this.chapter(zoneAt(0).zone.id);
     this.narrateQueue = [];
     PROLOGUE.forEach((l, i) => setTimeout(() => this.state === 'running' && this.narrate(l, 5200), 600 + i * 5400));
+    this.cinema(true, 9000);
+    this.audio.braam(0.8);
     this.syncInventory();
     this.thopter.group.visible = false;
   }
@@ -344,6 +351,7 @@ export class Game {
   }
 
   toTitle() {
+    this.cinema(true);
     this.resetWorld(Math.floor(Math.random() * 1e9));
     this.fresh = true;
     this.state = 'title';
@@ -452,6 +460,8 @@ export class Game {
     this.shake = 1;
     this.flash('#ffd29a', 0.5);
     this.beat('ride');
+    this.cinema(true, 2600);
+    this.audio.braam(1);
     this.syncInventory();
     for (let k = 0; k < 2; k++) {
       this.dustPool.emit(this.playerPos, { count: 60, spread: [3, 0.5, 3], vel: [0, 8 + k * 4, 0], velSpread: 5, life: 2, size: 2.4, grow: 3, color: this.colors.sand, gravity: -6, drag: 0.6, alpha: 0.45 });
@@ -464,6 +474,12 @@ export class Game {
     if (repeatable && p.beats[key] && this.time - p.beats[key] < 6) return;
     p.beats[key] = this.time;
     this.narrate(BEATS[key]);
+  }
+
+  cinema(on, ms = 0) {
+    clearTimeout(this.cinemaTimer);
+    this.app.classList.toggle('cinema', on);
+    if (on && ms) this.cinemaTimer = setTimeout(() => this.app.classList.remove('cinema'), ms);
   }
 
   narrate(text, ms = 4600) {
@@ -485,6 +501,7 @@ export class Game {
     const c = chapterFor(zoneId, visit);
     this.ui.zoneBanner.querySelector('small').textContent = `Chapter ${roman(p.chapter)}`;
     this.banner(c.title);
+    if (p.chapter > 1) { this.cinema(true, 3600); this.audio.braam(0.6); }
     if (p.chapter > 1) setTimeout(() => this.state === 'running' && this.narrate(c.line, 5200), 1400);
   }
 
@@ -592,6 +609,7 @@ export class Game {
       let rate = (22 + p.speed * 0.5) * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1);
       if (p.lure > 0) rate = 0;
       p.sign = Math.min(100, p.sign + rate * gdt);
+      if (p.sign > 60 && !p.beats.wormRising) this.audio.braam(0.7);
       if (p.sign > 60) this.beat('wormRising');
       if (p.sign >= 100) {
         if (p.hooks > 0) this.startRide();
@@ -833,6 +851,8 @@ export class Game {
       this.shake = 1;
     }
     this.deathPos = this.playerPos.clone();
+    this.cinema(true);
+    this.audio.braam(1);
     this.deathFwd = p.seg.fwd.clone();
     if (cause === 'edge') p.vy = 3;
   }
@@ -1175,6 +1195,7 @@ export class Game {
 
     if (this.grade) {
       this.grade.uniforms.uTime.value = this.time;
+      this.grade.uniforms.uNight.value = this.sky.night;
       this.shimmer.uniforms.uTime.value = this.time;
       this.shimmer.uniforms.uAmt.value = this.sky.uniforms.uDay.value * (1 - this.atmo.haze);
       this.grade.uniforms.uWarm.value = this.p.trance > 0 && this.state === 'running' ? -1 : 1;
