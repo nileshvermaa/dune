@@ -70,3 +70,41 @@ export function angleDamp(current, target, rate, dt) {
   while (d < -Math.PI) d += Math.PI * 2;
   return current + d * (1 - Math.exp(-rate * dt));
 }
+
+// Trilinear value noise in [-1, 1]; cheap and good enough for displacing props.
+export function createNoise3D(seed = 1) {
+  const rand = mulberry32(seed);
+  const p = new Uint8Array(512);
+  const v = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { p[i] = i; v[i] = rand() * 2 - 1; }
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const t = p[i]; p[i] = p[j]; p[j] = t;
+  }
+  for (let i = 0; i < 256; i++) p[i + 256] = p[i];
+  const h = (i, j, k) => v[p[p[p[i & 255] + (j & 255)] + (k & 255)]];
+  const f = (t) => t * t * (3 - 2 * t);
+  return function noise3(x, y, z) {
+    const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+    const xf = x - xi, yf = y - yi, zf = z - zi;
+    const u = f(xf), w = f(yf), s = f(zf);
+    const a = h(xi, yi, zi) + (h(xi + 1, yi, zi) - h(xi, yi, zi)) * u;
+    const b = h(xi, yi + 1, zi) + (h(xi + 1, yi + 1, zi) - h(xi, yi + 1, zi)) * u;
+    const c = h(xi, yi, zi + 1) + (h(xi + 1, yi, zi + 1) - h(xi, yi, zi + 1)) * u;
+    const d = h(xi, yi + 1, zi + 1) + (h(xi + 1, yi + 1, zi + 1) - h(xi, yi + 1, zi + 1)) * u;
+    const e = a + (b - a) * w;
+    const g = c + (d - c) * w;
+    return e + (g - e) * s;
+  };
+}
+
+export function fbm3(n, x, y, z, oct = 4) {
+  let a = 0, amp = 0.5, f = 1, norm = 0;
+  for (let i = 0; i < oct; i++) {
+    a += n(x * f, y * f, z * f) * amp;
+    norm += amp;
+    amp *= 0.5;
+    f *= 2.03;
+  }
+  return a / norm;
+}

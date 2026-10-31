@@ -37,6 +37,23 @@ function deckGeometry(w, h, l) {
   return g;
 }
 
+const TILE = {
+  base: new THREE.Color('#c9a17a'),
+  weathered: new THREE.Color('#a07a56'),
+  cream: new THREE.Color('#d9bd96'),
+  red: new THREE.Color('#b98c6c'),
+  parapet: new THREE.Color('#b58c63'),
+  pilaster: new THREE.Color('#c19870'),
+  cap: new THREE.Color('#d4b38a'),
+  cornice: new THREE.Color('#cba882'),
+  buttress: new THREE.Color('#a9805a'),
+};
+
+let medalRing = null;
+let medalDisc = null;
+const MEDAL_DISC = () => medalDisc || (medalDisc = new THREE.CylinderGeometry(1.7, 1.7, 0.04, 40));
+const MEDAL_RING = () => medalRing || (medalRing = new THREE.RingGeometry(1.45, 1.6, 48));
+
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -83,6 +100,7 @@ export class Track {
     this.scene.remove(seg.group);
     for (const g of seg.geos) g.dispose();
     for (const m of seg.mats) m.dispose();
+    for (const d of seg.disposables) d.dispose();
   }
 
   segmentAtDist(d) {
@@ -139,7 +157,7 @@ export class Track {
       startDist: this.nextDist, endDist: this.nextDist + L,
       turn, nextDir: nd, zone: zoneAt(this.nextDist + L * 0.5).zone,
       obstacles: [], gaps: [], pickups: [], geysers: [], animated: [],
-      geos: [], mats: [], group: new THREE.Group(), prev, next: null,
+      geos: [], mats: [], disposables: [], group: new THREE.Group(), prev, next: null,
     };
     seg.group.position.copy(start);
     seg.group.rotation.y = YAWS[dir];
@@ -323,6 +341,9 @@ export class Track {
   buildDeck(seg, first) {
     const L = seg.length;
     const g = seg.group;
+    const rng = this.rng;
+    const blocks = [];
+    const add = (x, y, z, sx, sy, sz, color, ry = 0, rx = 0, rz = 0) => blocks.push({ x, y, z, sx, sy, sz, color, ry, rx, rz });
     const addMesh = (geom, mat, x, y, z, receive = true) => {
       seg.geos.push(geom);
       const m = new THREE.Mesh(geom, mat);
@@ -332,34 +353,115 @@ export class Track {
       g.add(m);
       return m;
     };
-    const piece = (a, b) => {
+    const coreMats = [P.mats.wall, P.mats.wall, P.mats.mortar, P.mats.wall, P.mats.wall, P.mats.wall];
+    const tile = () => {
+      const r = rng();
+      const base = r < 0.07 ? TILE.weathered : r < 0.12 ? TILE.cream : r < 0.16 ? TILE.red : TILE.base;
+      return base.clone().multiplyScalar(0.86 + rng() * 0.2);
+    };
+    // running-bond paving slabs, optionally broken off at the far end (gap edges)
+    const pave = (a, b, x0, x1, ragged = false) => {
+      let s = a;
+      while (s < b - 0.05) {
+        const l = Math.min(1.3 + rng() * 0.55, b - s);
+        let x = x0;
+        while (x < x1 - 0.05) {
+          let w = [1.0, 1.35, 1.8, 2.2][Math.floor(rng() * 4)];
+          if (x1 - x - w < 0.75) w = x1 - x;
+          const ll = ragged && s + l >= b - 0.01 ? l * (0.45 + rng() * 0.55) : l;
+          add(x + w / 2, -0.13 + (rng() - 0.5) * 0.025, -(s + ll / 2), w - 0.07, 0.26, ll - 0.07, tile(), (rng() - 0.5) * 0.012, (rng() - 0.5) * 0.012, (rng() - 0.5) * 0.012);
+          x += w;
+        }
+        s += l;
+      }
+    };
+    // low parapet with a pilaster every 12m (lanterns sit on every other one)
+    const parapet = (side, a, b) => {
+      const x = side * 3.79;
+      const posts = [];
+      for (let p = Math.ceil(a / 12) * 12; p < b; p += 12) if (p > a + 0.4 && p < b - 0.4) posts.push(p);
+      let s = a;
+      for (const p of [...posts, b + 1]) {
+        const stop = Math.min(b, p - 0.36);
+        while (s < stop - 0.1) {
+          const l = Math.min(1.1 + rng() * 0.6, stop - s);
+          add(x, 0.11, -(s + l / 2), 0.42, 0.42, l - 0.04, TILE.parapet.clone().multiplyScalar(0.88 + rng() * 0.16));
+          s += l;
+        }
+        if (p <= b) {
+          add(x, 0.3, -p, 0.62, 0.8, 0.62, TILE.pilaster.clone().multiplyScalar(0.92 + rng() * 0.12));
+          add(x, 0.76, -p, 0.76, 0.12, 0.76, TILE.cap.clone());
+          s = p + 0.36;
+        }
+      }
+    };
+    // cornice, plinth and buttresses dressing the causeway walls
+    const walls = (a, b) => {
+      for (const side of [-1, 1]) {
+        for (let s = a; s < b - 0.05; s += 2) {
+          const l = Math.min(2, b - s);
+          add(side * 4.05, -0.28, -(s + l / 2), 0.3, 0.24, l - 0.02, TILE.cornice.clone().multiplyScalar(0.94 + rng() * 0.1));
+          add(side * 4.03, -2.45, -(s + l / 2), 0.26, 0.42, l - 0.02, TILE.buttress.clone());
+        }
+        for (let s = Math.ceil(a / 6) * 6 + 3; s < b - 0.5; s += 6) {
+          add(side * 4.2, -1.75, -s, 0.4, 2.5, 0.85, TILE.buttress.clone().multiplyScalar(0.9 + rng() * 0.15));
+          add(side * 4.16, -0.5, -s, 0.5, 0.18, 1.0, TILE.cornice.clone());
+        }
+      }
+    };
+    const piece = (a, b, raggedEnd) => {
       const len = b - a;
       if (len <= 0.05) return;
-      addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, len), P.mats.stone, 0, -DECK_DEPTH / 2, -(a + b) / 2);
-      for (const sx of [-1, 1]) addMesh(deckGeometry(0.35, 0.3, len), P.mats.stoneDark, sx * (DECK_HALF - 0.175), 0.15, -(a + b) / 2);
+      addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, len), coreMats, 0, -0.1 - DECK_DEPTH / 2, -(a + b) / 2);
+      pave(a, b, -3.58, 3.58, raggedEnd);
+      parapet(-1, a, b);
+      parapet(1, a, b);
+      walls(a, b);
     };
+
     let cur = first ? -60 : DECK_HALF;
     const gaps = seg.gaps.slice().sort((x, y) => x[0] - y[0]);
     for (const [a, b] of gaps) {
-      piece(cur, a);
+      piece(cur, a, true);
       const pit = addMesh(new THREE.PlaneGeometry(DECK_HALF * 2, b - a), P.mats.dark, 0, SAND_BED + 0.25, -(a + b) / 2, false);
       pit.rotation.x = -Math.PI / 2;
-      for (const ss of [a + 0.4, b - 0.4]) {
-        const r = P.makeRock('boulder', Math.floor(this.rng() * 4), 0.6, 0.35, 0.5);
-        r.position.set((this.rng() - 0.5) * 6, 0.05, -ss);
-        r.userData.shadow = false;
-        g.add(r);
+      for (let k = 0; k < 4; k++) {
+        add((rng() - 0.5) * 6, SAND_BED + 0.35, -(a + rng() * (b - a)), 0.9 + rng() * 0.8, 0.26, 0.8 + rng() * 0.6, tile(), rng() * 3, (rng() - 0.5) * 0.6, (rng() - 0.5) * 0.6);
       }
       cur = b;
     }
-    piece(cur, L - DECK_HALF);
+    piece(cur, L - DECK_HALF, false);
 
-    // corner platform
-    addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, DECK_HALF * 2), P.mats.stone, 0, -DECK_DEPTH / 2, -L);
-    addMesh(deckGeometry(DECK_HALF * 2, 0.3, 0.35), P.mats.stoneDark, 0, 0.15, -(L + DECK_HALF - 0.175));
-    addMesh(deckGeometry(0.35, 0.3, DECK_HALF * 2), P.mats.stoneDark, -seg.turn * (DECK_HALF - 0.175), 0.15, -L);
-    const arrowGeo = new THREE.PlaneGeometry(3.4, 3.4);
-    for (const ss of [L - 9, L - 1]) {
+    // corner platform: square paving, closed parapets, inlaid medallion
+    addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, DECK_HALF * 2), coreMats, 0, -0.1 - DECK_DEPTH / 2, -L);
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        add(-3.58 + 0.895 + i * 1.79, -0.13, -(L - 3.58 + 0.895 + j * 1.79), 1.72, 0.26, 1.72, tile());
+      }
+    }
+    for (let x = -3.58; x < 3.5; x += 1.43) add(x + 0.715, 0.11, -(L + 3.79), 1.39, 0.42, 0.42, TILE.parapet.clone().multiplyScalar(0.9 + rng() * 0.15));
+    const cs = -seg.turn;
+    for (let s = L - 3.58; s < L + 3.5; s += 1.43) add(cs * 3.79, 0.11, -(s + 0.715), 0.42, 0.42, 1.39, TILE.parapet.clone().multiplyScalar(0.9 + rng() * 0.15));
+    for (const [x, s] of [[cs * 3.79, L + 3.79], [-cs * 3.79, L + 3.79], [cs * 3.79, L - 3.79]]) {
+      add(x, 0.4, -s, 0.7, 1.0, 0.7, TILE.pilaster.clone());
+      add(x, 0.96, -s, 0.84, 0.14, 0.84, TILE.cap.clone());
+    }
+    for (const side of [-1, 1]) add(side * 4.05, -0.28, -L, 0.3, 0.24, 8, TILE.cornice.clone());
+    add(0, -0.28, -(L + 4.05), 8.6, 0.24, 0.3, TILE.cornice.clone());
+    const medalGeo = MEDAL_DISC();
+    const medal = new THREE.Mesh(medalGeo, P.mats.tile);
+    medal.position.set(0, 0.008, -L);
+    medal.receiveShadow = true;
+    medal.userData.shadow = false;
+    g.add(medal);
+    const ring = new THREE.Mesh(MEDAL_RING(), P.mats.spiceGlow);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(0, 0.035, -L);
+    ring.userData.shadow = false;
+    g.add(ring);
+
+    const arrowGeo = new THREE.PlaneGeometry(3.2, 3.2);
+    for (const ss of [L - 10, L - 5.5]) {
       const arrow = addMesh(arrowGeo, P.mats.arrow, 0, 0.03, -ss, false);
       arrow.rotation.set(-Math.PI / 2, 0, seg.turn < 0 ? Math.PI : 0);
       arrow.renderOrder = 2;
@@ -367,6 +469,23 @@ export class Track {
     const ob = P.makeObelisk();
     ob.position.set(-seg.turn * (DECK_HALF + 2.6), 0, -(L + DECK_HALF + 2.6));
     g.add(ob);
+
+    const im = new THREE.InstancedMesh(P.geo('block'), P.mats.tile, blocks.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+    blocks.forEach((b, i) => {
+      q.setFromEuler(e.set(b.rx, b.ry, b.rz));
+      m4.compose(p.set(b.x, b.y, b.z), q, sc.set(b.sx, b.sy, b.sz));
+      im.setMatrixAt(i, m4);
+      im.setColorAt(i, b.color);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+    im.receiveShadow = true;
+    im.castShadow = true;
+    im.userData.shadow = false;
+    g.add(im);
+    seg.disposables.push(im);
   }
 
   propAt(seg, obj, x, s, yOffset = 0, onBed = false) {
@@ -385,10 +504,10 @@ export class Track {
     const z = seg.zone.id;
     const s0 = first ? -50 : 0;
 
-    for (let s = s0 + 12, k = 0; s < L - 8; s += 24, k++) {
+    for (let s = first ? -36 : 12, k = 0; s < L - 8; s += 24, k++) {
       if (this.inGap(seg, s, -1.5)) continue;
       const post = P.makeGlowPost();
-      post.position.set((k % 2 ? 1 : -1) * (DECK_HALF - 0.2), 0, -s);
+      post.position.set((k % 2 ? 1 : -1) * 3.79, 0.82, -s);
       post.traverse((o) => { o.userData.shadow = false; });
       seg.group.add(post);
     }
@@ -400,7 +519,8 @@ export class Track {
         if (rng() < (z === 'storm' ? 0.3 : 0.5)) {
           const side = rng() < 0.5 ? -1 : 1;
           const sc = 2 + rng() * 5;
-          this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), sc, sc * (0.6 + rng() * 0.8), sc), sideLat(side, 13, 42), s, sc * 0.2);
+          const sy = sc * (0.6 + rng() * 0.8);
+          this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), sc, sy, sc), sideLat(side, 13, 42), s, sy * 0.15).rotation.y = rng() * 6.28;
         }
         if (rng() < 0.05) {
           const t = P.makeThumper();

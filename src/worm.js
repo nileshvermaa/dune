@@ -8,18 +8,34 @@ import { smoothstep } from './noise.js';
 const Y = new THREE.Vector3(0, 1, 0);
 let shared = null;
 
+function paint(g, fn) {
+  const p = g.attributes.position;
+  const c = new Float32Array(p.count * 3);
+  for (let i = 0; i < p.count; i++) {
+    const k = fn(p.getX(i), p.getY(i), p.getZ(i));
+    c[i * 3] = k; c[i * 3 + 1] = k * 0.96; c[i * 3 + 2] = k * 0.9;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+}
+
 function getShared() {
   if (shared) return shared;
   const prof = [];
   const pts = [[0.9, -0.5], [0.97, -0.38], [1.0, -0.15], [1.01, 0.1], [0.98, 0.34], [0.9, 0.5]];
   for (const [r, y] of pts) prof.push(new THREE.Vector2(r, y));
-  const segGeo = new THREE.LatheGeometry(prof, 22);
+  const segGeo = new THREE.LatheGeometry(prof, 28);
+  paint(segGeo, (x, y, z) => {
+    const groove = 1 - Math.min(1, Math.abs(Math.abs(y) - 0.5) * 6);
+    const plate = 0.88 + 0.12 * Math.sin(Math.atan2(x, z) * 9 + y * 3);
+    return (1 - groove * 0.5) * plate;
+  });
   const bodyMat = new THREE.MeshStandardMaterial({
-    color: '#b08c66', roughness: 0.82, metalness: 0.05,
+    color: '#c09a72', vertexColors: true, roughness: 0.78, metalness: 0.05,
     normalMap: tex.sand.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
   });
   const headProf = [[0.98, -1.0], [1.04, -0.3], [1.1, 0.4], [1.16, 0.85], [1.12, 0.92]].map(([r, y]) => new THREE.Vector2(r, y));
-  const headGeo = new THREE.LatheGeometry(headProf, 26);
+  const headGeo = new THREE.LatheGeometry(headProf, 32);
+  paint(headGeo, (x, y) => 0.85 + 0.15 * Math.sin(y * 14));
   const petalGeos = [];
   for (let k = 0; k < 3; k++) {
     const g = new THREE.ConeGeometry(1.14, 1.7, 14, 3, true, (k * Math.PI * 2) / 3 + 0.03, (Math.PI * 2) / 3 - 0.06);

@@ -1,15 +1,30 @@
 import * as THREE from 'three';
-import { createNoise2D, mulberry32 } from './noise.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { createNoise3D, fbm3, mulberry32, smoothstep } from './noise.js';
 import { createSandTextures, createStoneTextures, createGlowTexture, createArrowTexture } from './textures.js';
+import { detailed } from './materials.js';
+import { M, rbox, radialSurface, lathe, merge, shade, displace, col } from './geom.js';
 
-// Shared materials, geometry and prop builders. Everything is procedural.
+// Props are built as single merged meshes with baked vertex colours (strata, grime, AO)
+// and rendered with world-space stone detail. Geometry is cached per variant.
 
 export const tex = {};
 export const mats = {};
-const geoCache = new Map();
-const rockNoise = createNoise2D(4242);
+const cache = new Map();
+const N3 = createNoise3D(4242);
 
-const srgb = (hex) => new THREE.Color(hex);
+function cached(key, fn) {
+  if (!cache.has(key)) cache.set(key, fn());
+  return cache.get(key);
+}
+export function geo(name) { return cache.get(name); }
+
+const C = {
+  cream: col('#ecd6b2'), light: col('#d8b287'), mid: col('#bd8d5d'), dark: col('#8c5c3a'),
+  red: col('#a9583a'), rust: col('#9b4f2c'), ochre: col('#c98e4e'), sand: col('#e2bd8c'),
+  bone: col('#ebe1ce'), boneDark: col('#a8977c'), metal: col('#7a6a5a'), metalDark: col('#3a332e'),
+  hazard: col('#d9a531'), black: col('#1e1a17'), brass: col('#c49a55'), white: col('#ffffff'),
+};
 
 export function initProps() {
   Object.assign(tex, {
@@ -19,20 +34,20 @@ export function initProps() {
     arrow: createArrowTexture(256),
   });
 
-  mats.rock = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95, metalness: 0 });
-  mats.stone = new THREE.MeshStandardMaterial({ map: tex.stone.map, normalMap: tex.stone.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.92, color: srgb('#fff4e6') });
-  mats.stoneDark = new THREE.MeshStandardMaterial({ map: tex.stone.map, normalMap: tex.stone.normalMap, roughness: 0.95, color: srgb('#9c7f62') });
-  mats.bone = new THREE.MeshStandardMaterial({ color: srgb('#e7dcc6'), roughness: 0.55, metalness: 0.02 });
-  mats.metal = new THREE.MeshStandardMaterial({ color: srgb('#6b5a4a'), roughness: 0.55, metalness: 0.7 });
-  mats.metalDark = new THREE.MeshStandardMaterial({ color: srgb('#2c2622'), roughness: 0.45, metalness: 0.8 });
-  mats.rust = new THREE.MeshStandardMaterial({ color: srgb('#8a5a3a'), roughness: 0.8, metalness: 0.45 });
-  mats.glass = new THREE.MeshStandardMaterial({ color: srgb('#1b2a3a'), roughness: 0.08, metalness: 0.6, emissive: srgb('#0d2a40'), emissiveIntensity: 0.6 });
-  mats.wing = new THREE.MeshStandardMaterial({ color: srgb('#c9b9a0'), roughness: 0.4, metalness: 0.5, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  mats.stoneV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86 }), { scale: 0.3, strength: 0.14, bump: 0.22 });
+  mats.rock = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94 }), { scale: 0.12, strength: 0.28, bump: 0.5 });
+  mats.tile = detailed(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8 }), { scale: 0.3, strength: 0.16, bump: 0.3 });
+  mats.wall = detailed(new THREE.MeshStandardMaterial({ map: tex.stone.map, normalMap: tex.stone.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.9, color: '#e8cfae' }), { scale: 0.3, strength: 0.12, bump: 0.2 });
+  mats.mortar = new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 1 });
+  mats.boneV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.02 }), { scale: 1.0, strength: 0.12, bump: 0.2 });
+  mats.metalV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.7 }), { scale: 0.8, strength: 0.15, bump: 0.12 });
+  mats.glass = new THREE.MeshPhysicalMaterial({ color: '#16222e', roughness: 0.05, metalness: 0.2, clearcoat: 1, emissive: '#0b2233', emissiveIntensity: 0.5 });
+  mats.wing = new THREE.MeshStandardMaterial({ color: '#d8c8ae', roughness: 0.35, metalness: 0.4, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
   mats.spiceGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 0.8, 0.1) });
   mats.globe = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 2.2, 1.1) });
   mats.ibadGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.2, 4.0) });
-  mats.dark = new THREE.MeshBasicMaterial({ color: srgb('#120904') });
-  mats.vent = new THREE.MeshStandardMaterial({ color: srgb('#2a1408'), emissive: srgb('#ff5a10'), emissiveIntensity: 0.4, roughness: 1 });
+  mats.dark = new THREE.MeshBasicMaterial({ color: '#120904' });
+  mats.vent = new THREE.MeshStandardMaterial({ color: '#2a1408', emissive: '#ff5a10', emissiveIntensity: 0.4, roughness: 1 });
   mats.eruption = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 1.1, 0.25), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
   mats.arrow = new THREE.MeshBasicMaterial({ map: tex.arrow, color: new THREE.Color(2.4, 1.1, 0.35), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   mats.spicePatch = new THREE.MeshBasicMaterial({ map: tex.glow, color: new THREE.Color(1.6, 0.55, 0.12), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -42,50 +57,121 @@ export function initProps() {
   mats.shieldHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.3, 0.6, 1.0), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   mats.tranceHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.55, 0.35, 1.0), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   mats.thopterHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(1.0, 0.85, 0.3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
-  mats.plume = new THREE.SpriteMaterial({ map: tex.glow, color: srgb('#a07850'), transparent: true, opacity: 0.35, depthWrite: false });
+  mats.plume = new THREE.SpriteMaterial({ map: tex.glow, color: '#a07850', transparent: true, opacity: 0.35, depthWrite: false });
 
   mats.shieldPU = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.4, 3.2), wireframe: true });
-  mats.trancePU = new THREE.MeshStandardMaterial({ color: srgb('#4a3cff'), emissive: new THREE.Color(0.5, 0.3, 2.0), roughness: 0.2, metalness: 0.3 });
-  mats.thopterPU = new THREE.MeshStandardMaterial({ color: srgb('#ffc54a'), emissive: srgb('#7a4a00'), roughness: 0.3, metalness: 0.9 });
+  mats.trancePU = new THREE.MeshStandardMaterial({ color: '#4a3cff', emissive: new THREE.Color(0.5, 0.3, 2.0), roughness: 0.2, metalness: 0.3 });
+  mats.thopterPU = new THREE.MeshStandardMaterial({ vertexColors: true, color: '#ffd27a', emissive: '#5a3500', roughness: 0.3, metalness: 0.9 });
 
-  geoCache.set('spiceCore', new THREE.OctahedronGeometry(0.26, 0));
-  geoCache.set('box', new THREE.BoxGeometry(1, 1, 1));
-  geoCache.set('globe', new THREE.SphereGeometry(0.2, 12, 8));
+  mats.stone = mats.wall;
+  mats.stoneDark = mats.wall;
+
+  cache.set('spiceCore', (() => { const g = new THREE.OctahedronGeometry(0.28, 0); g.scale(0.8, 1.25, 0.8); return g; })());
+  cache.set('box', new THREE.BoxGeometry(1, 1, 1));
+  cache.set('globe', new THREE.SphereGeometry(0.2, 16, 12));
+  cache.set('block', rbox(1, 1, 1, 0.07, 1));
 }
 
-export function geo(name) { return geoCache.get(name); }
+const lerpC = (a, b, t) => a.clone().lerp(b, t);
+const vary = (c, rnd, k = 0.08) => c.clone().multiplyScalar(1 - k + rnd() * k * 2);
 
-/* ---------------- Rocks ---------------- */
+/* ================= Rock formations ================= */
 
-const ROCK_DARK = srgb('#5e3a26');
-const ROCK_MID = srgb('#9a6440');
-const ROCK_LIGHT = srgb('#c89566');
+function strataPalette(rnd) {
+  const pool = [C.cream, C.light, C.mid, C.ochre, C.red, C.dark, C.light, C.mid];
+  return Array.from({ length: 9 }, () => vary(pool[Math.floor(rnd() * pool.length)], rnd, 0.06));
+}
 
-function buildRock(kind, seed) {
+function bandColor(bands, y, out) {
+  const f = ((((y % 1) + 1) % 1)) * bands.length;
+  const i = Math.floor(f), t = smoothstep(0.75, 1, f - i);
+  return out.copy(bands[i % bands.length]).lerp(bands[(i + 1) % bands.length], t);
+}
+
+function buildMesa(seed) {
   const rnd = mulberry32(seed);
-  const g = new THREE.IcosahedronGeometry(1, kind === 'mesa' ? 3 : 2);
-  const pos = g.attributes.position;
+  const bands = strataPalette(rnd);
+  const o = rnd() * 50;
+  const ledges = [0.42 + rnd() * 0.1, 0.68 + rnd() * 0.1, 0.88];
+  const noiseAt = (th, t) => fbm3(N3, Math.sin(th) * 1.4 + o, t * 3.2, Math.cos(th) * 1.4, 4);
+  return radialSurface({
+    seg: 56, rings: 36,
+    radius: (th, t) => {
+      let p = t < 0.16 ? 1.38 - 0.38 * smoothstep(0, 0.16, t) : 1;
+      for (const l of ledges) p -= 0.055 * smoothstep(l - 0.01, l + 0.01, t);
+      if (t > 0.985) p *= 0.94;
+      const e = noiseAt(th, t);
+      const gully = Math.pow(Math.abs(Math.sin(th * 6 + N3(t * 2 + o, th, 1) * 2.5)), 8) * 0.09 * smoothstep(0.15, 0.3, t);
+      return p * (1 + e * 0.3 - gully);
+    },
+    height: (th, t) => (t >= 1 ? 1 + N3(Math.sin(th) * 3, o, Math.cos(th) * 3) * 0.015 : t),
+    color: (th, t, x, y, z, c) => {
+      const e = noiseAt(th, t);
+      bandColor(bands, t * 6 + e * 0.6, c);
+      if (t < 0.16) c.lerp(C.sand, 1 - smoothstep(0.02, 0.16, t) * 0.5);
+      if (t > 0.97) c.lerp(C.sand, 0.55);
+      c.multiplyScalar(0.82 + 0.25 * (e * 0.5 + 0.5));
+    },
+  });
+}
+
+function buildSpire(seed) {
+  const rnd = mulberry32(seed);
+  const bands = strataPalette(rnd);
+  const o = rnd() * 50;
+  const neck = 0.55 + rnd() * 0.15;
+  return radialSurface({
+    seg: 36, rings: 30,
+    radius: (th, t) => {
+      let p = 1 - t * 0.55;
+      p -= 0.25 * Math.exp(-(((t - neck) / 0.12) ** 2));
+      p += 0.22 * Math.exp(-(((t - (neck + 0.18)) / 0.07) ** 2));
+      if (t > 0.92) p *= 1 - (t - 0.92) * 5;
+      const e = fbm3(N3, Math.sin(th) * 1.3 + o, t * 4, Math.cos(th) * 1.3, 4);
+      return Math.max(0.02, p * (1 + e * 0.32));
+    },
+    height: (th, t) => t,
+    color: (th, t, x, y, z, c) => {
+      bandColor(bands, t * 5 + N3(x * 2, t * 3, z * 2) * 0.4, c);
+      if (t < 0.1) c.lerp(C.sand, 0.5);
+      c.multiplyScalar(0.85 + 0.2 * (N3(x * 4 + o, y * 4, z * 4) * 0.5 + 0.5));
+    },
+  });
+}
+
+function buildBoulder(seed) {
+  const rnd = mulberry32(seed);
+  const pool = [C.mid, C.ochre, C.red, C.dark, C.light];
+  const bands = Array.from({ length: 7 }, () => vary(pool[Math.floor(rnd() * pool.length)], rnd, 0.06));
+  const o = rnd() * 50;
+  const steps = 3 + Math.floor(rnd() * 3);
+  let g = new THREE.IcosahedronGeometry(1, 4);
+  g.deleteAttribute('uv');
+  g.deleteAttribute('normal');
+  g = mergeVertices(g);
+  const p = g.attributes.position;
   const v = new THREE.Vector3();
-  const o = rnd() * 100;
-  const colors = new Float32Array(pos.count * 3);
+  const colors = new Float32Array(p.count * 3);
   const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i);
-    const n = rockNoise(v.x * 1.3 + o, v.y * 1.3) * 0.5 + rockNoise(v.y * 1.7 - o, v.z * 1.7) * 0.35 + rockNoise(v.z * 3.1 + o, v.x * 3.1) * 0.15;
-    v.multiplyScalar(1 + n * (kind === 'boulder' ? 0.38 : 0.25));
-    if (kind === 'mesa') {
-      if (v.y > 0.3) v.y = 0.3 + (v.y - 0.3) * 0.1;
-      const strata = 1 + 0.05 * Math.sin(v.y * 22 + o);
-      v.x *= strata; v.z *= strata;
-    } else if (kind === 'spire') {
-      const k = 0.35 + (1 - (v.y + 1) * 0.5) * 0.35;
-      v.x *= k; v.z *= k;
-    }
-    if (v.y < -0.4) v.y = -0.4 + (v.y + 0.4) * 0.3;
-    pos.setXYZ(i, v.x, v.y, v.z);
-    const band = 0.5 + 0.5 * Math.sin(v.y * 9 + n * 3 + o);
-    c.copy(ROCK_MID).lerp(ROCK_LIGHT, band * 0.8);
-    c.lerp(ROCK_DARK, Math.max(0, -v.y) * 0.6);
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    // push the sphere toward a weathered block
+    const m = Math.max(Math.abs(v.x), Math.abs(v.y), Math.abs(v.z));
+    v.multiplyScalar(Math.pow(1 / m, 0.55));
+    const e = fbm3(N3, v.x * 0.9 + o, v.y * 0.9, v.z * 0.9, 4);
+    const fine = N3(v.x * 4 + o, v.y * 4, v.z * 4);
+    v.multiplyScalar(0.8 + e * 0.38 + fine * 0.04);
+    // strata ledges and an undercut at the base
+    const ty = (v.y + 1) * steps * 0.5;
+    const frac = ty - Math.floor(ty);
+    const ledge = smoothstep(0.82, 1, frac);
+    v.x *= 1 - ledge * 0.07; v.z *= 1 - ledge * 0.07;
+    if (v.y < -0.35) { const k = 0.82 + (v.y + 0.35) * 0.4; v.x *= k; v.z *= k; v.y = -0.35 + (v.y + 0.35) * 0.3; }
+    if (v.y > 0.6) v.y = 0.6 + (v.y - 0.6) * 0.45;
+    p.setXYZ(i, v.x, v.y, v.z);
+    bandColor(bands, v.y * 1.3 + e * 0.25, c);
+    c.multiplyScalar((0.78 + 0.3 * (e * 0.5 + 0.5)) * (1 - ledge * 0.25));
+    if (v.y > 0.5) c.lerp(C.sand, 0.25);
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -94,9 +180,11 @@ function buildRock(kind, seed) {
 }
 
 export function rockGeometry(kind, variant = 0) {
-  const key = `rock-${kind}-${variant % 4}`;
-  if (!geoCache.has(key)) geoCache.set(key, buildRock(kind, 1000 + (variant % 4) * 77 + kind.length * 13));
-  return geoCache.get(key);
+  const v = variant % 4;
+  return cached(`rock-${kind}-${v}`, () => {
+    const seed = 1000 + v * 77 + kind.length * 13;
+    return kind === 'mesa' ? buildMesa(seed) : kind === 'spire' ? buildSpire(seed) : buildBoulder(seed);
+  });
 }
 
 export function makeRock(kind, variant, sx, sy, sz) {
@@ -105,155 +193,297 @@ export function makeRock(kind, variant, sx, sy, sz) {
   return m;
 }
 
-/* ---------------- Track obstacles ---------------- */
+/* ================= Carved stone ================= */
 
-function cachedGeo(key, fn) {
-  if (!geoCache.has(key)) geoCache.set(key, fn());
-  return geoCache.get(key);
+function blockColor(rnd, base = C.light) {
+  return vary(lerpC(base, rnd() < 0.5 ? C.mid : C.cream, rnd() * 0.4), rnd, 0.07);
 }
 
-export function makeColumn(height = 6, broken = false) {
-  const g = new THREE.Group();
-  const shaft = new THREE.Mesh(cachedGeo('colShaft', () => new THREE.CylinderGeometry(0.62, 0.74, 1, 10)), mats.stone);
-  shaft.scale.y = height;
-  shaft.position.y = height / 2;
-  g.add(shaft);
-  const base = new THREE.Mesh(geo('box'), mats.stoneDark);
-  base.scale.set(1.9, 0.6, 1.9);
-  base.position.y = 0.3;
-  g.add(base);
-  if (!broken) {
-    const cap = new THREE.Mesh(geo('box'), mats.stoneDark);
-    cap.scale.set(1.9, 0.55, 1.9);
-    cap.position.y = height + 0.27;
-    g.add(cap);
-  } else {
-    shaft.rotation.z = 0.04;
-  }
-  return g;
-}
-
-function boneArcGeometry() {
-  return cachedGeo('boneArc', () => {
-    const pts = [];
-    for (let i = 0; i <= 16; i++) {
-      const t = i / 16;
-      const a = Math.PI * t;
-      pts.push(new THREE.Vector3(-Math.cos(a) * 5.4, -2.8 + Math.sin(a) * 9.0 + Math.sin(a * 2) * 0.4, Math.sin(a) * -1.2));
-    }
-    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.32, 8, false);
+function grime(g, y0, y1, amount = 0.35) {
+  return shade(g, (x, y, z, nx, ny) => {
+    const low = 1 - smoothstep(y0, y1, y);
+    const up = ny > 0.6 ? 1.06 : 1;
+    return (1 - low * amount) * up;
   });
 }
 
-export function makeBoneArch(withBeam = true) {
-  const g = new THREE.Group();
-  for (const dz of [-0.9, 0.9]) {
-    const arc = new THREE.Mesh(boneArcGeometry(), mats.bone);
-    arc.position.z = dz;
-    g.add(arc);
-  }
-  if (withBeam) {
-    const beam = new THREE.Mesh(cachedGeo('boneBeam', () => new THREE.CapsuleGeometry(0.34, 9.0, 4, 10)), mats.bone);
-    beam.rotation.z = Math.PI / 2;
-    beam.position.y = 1.55;
-    g.add(beam);
-    for (const sx of [-4.35, 4.35]) {
-      const post = new THREE.Mesh(cachedGeo('bonePost', () => new THREE.CylinderGeometry(0.22, 0.3, 4.4, 8)), mats.bone);
-      post.position.set(sx, -0.6, 0);
-      g.add(post);
+function chipped(g, amp, freq, seed) {
+  const n = createNoise3D(seed);
+  const src = g.clone();
+  src.deleteAttribute('uv');
+  src.deleteAttribute('normal');
+  const m = mergeVertices(src);
+  return displace(m, (x, y, z, o) => o.set(n(x * freq, y * freq, z * freq), n(y * freq + 9, z * freq, x * freq) * 0.6, n(z * freq - 5, x * freq, y * freq)).multiplyScalar(amp));
+}
+
+function buildColumn(height, broken, seed) {
+  const rnd = mulberry32(seed);
+  const n = createNoise3D(seed);
+  const shaftTop = broken ? height * (0.55 + rnd() * 0.3) : height - 0.85;
+  const parts = [
+    [rbox(1.75, 0.5, 1.75, 0.06), blockColor(rnd, C.mid), M(0, 0.25, 0)],
+    [lathe([[0, 0.5], [0.84, 0.5], [0.86, 0.58], [0.78, 0.66], [0.72, 0.7], [0.76, 0.76], [0.68, 0.82], [0, 0.82]], 32), blockColor(rnd), null],
+  ];
+  const shaft = radialSurface({
+    seg: 48, rings: 18, capTop: true,
+    radius: (th, t) => {
+      const flute = Math.pow(0.5 + 0.5 * Math.cos(th * 20), 2);
+      const r = (0.64 - 0.09 * t + 0.03 * Math.sin(Math.PI * t)) * (1 - 0.05 * flute);
+      return r * (1 + n(Math.sin(th) * 3, t * 6, Math.cos(th) * 3) * 0.035);
+    },
+    height: (th, t) => {
+      let y = 0.82 + t * (shaftTop - 0.82);
+      if (broken && t === 1) y -= 0.15 + Math.abs(n(Math.sin(th) * 2.5, 3, Math.cos(th) * 2.5)) * 0.9;
+      return y;
+    },
+    color: (th, t, x, y, z, c) => {
+      const flute = Math.pow(0.5 + 0.5 * Math.cos(th * 20), 2);
+      c.copy(C.light).lerp(C.cream, 0.3).multiplyScalar(1 - flute * 0.16);
+      c.lerp(C.red, (1 - smoothstep(0, 0.25, t)) * 0.3);
+      for (const k of [0.33, 0.66]) if (Math.abs(t - k) < 0.03) c.multiplyScalar(0.75);
+      c.multiplyScalar(0.9 + n(x * 5, y * 5, z * 5) * 0.12);
+    },
+  });
+  parts.push([shaft, null, null]);
+  if (!broken) {
+    parts.push([lathe([[0, 0], [0.56, 0], [0.6, 0.1], [0.78, 0.3], [0.84, 0.38], [0, 0.38]], 32), blockColor(rnd), M(0, shaftTop, 0)]);
+    parts.push([rbox(1.85, 0.42, 1.85, 0.05), blockColor(rnd, C.mid), M(0, shaftTop + 0.6, 0)]);
+  } else {
+    for (let i = 0; i < 3; i++) {
+      const s = 0.25 + rnd() * 0.35;
+      parts.push([rbox(s, s * 0.7, s * 0.9, 0.05), blockColor(rnd), M((rnd() - 0.5) * 1.6, 0.6, (rnd() - 0.5) * 1.6, rnd(), rnd(), rnd())]);
     }
   }
+  return grime(merge(parts), 0, 1.8, 0.3);
+}
+
+export function makeColumn(height = 6, broken = false) {
+  const h = Math.max(3, Math.round(height));
+  const v = Math.random() < 0.5 ? 0 : 1;
+  return new THREE.Mesh(cached(`col-${h}-${broken}-${v}`, () => buildColumn(h, broken, h * 31 + (broken ? 7 : 0) + v * 101)), mats.stoneV);
+}
+
+function buildBigArch(span, height) {
+  const rnd = mulberry32(span * 7 + height);
+  const R = span / 2;
+  const springY = height - R - 1;
+  const parts = [];
+  for (const side of [-1, 1]) {
+    let y = -3;
+    while (y < springY - 0.05) {
+      const h = Math.min(0.9 + rnd() * 0.6, springY - y);
+      parts.push([rbox(2.1 + rnd() * 0.15, h - 0.04, 2.2 + rnd() * 0.15, 0.06), blockColor(rnd), M(side * (R + 1.05), y + h / 2, 0)]);
+      y += h;
+    }
+    parts.push([rbox(2.6, 0.45, 2.6, 0.05), blockColor(rnd, C.mid), M(side * (R + 1.05), springY + 0.22, 0)]);
+  }
+  const nV = 17;
+  for (let i = 0; i < nV; i++) {
+    const a = (Math.PI * (i + 0.5)) / nV;
+    const key = i === (nV - 1) / 2;
+    const radial = key ? 2.3 : 1.7;
+    const tang = (Math.PI * (R + 0.85)) / nV - 0.05;
+    const cx = -Math.cos(a) * (R + radial / 2), cy = springY + 0.45 + Math.sin(a) * (R + radial / 2);
+    parts.push([rbox(radial, tang, key ? 2.5 : 2.2, 0.05), key ? blockColor(rnd, C.cream) : blockColor(rnd), M(cx, cy, 0, 0, 0, a)]);
+  }
+  const topY = springY + 0.45 + R + 2.6;
+  parts.push([rbox(span + 5.2, 1.3, 2.3, 0.06), blockColor(rnd), M(0, topY, 0)]);
+  parts.push([rbox(span + 5.0, 0.35, 2.45, 0.04), blockColor(rnd, C.mid), M(0, topY - 0.35, 0)]);
+  parts.push([rbox(span + 5.8, 0.38, 2.7, 0.05), blockColor(rnd, C.cream), M(0, topY + 0.82, 0)]);
+  for (const side of [-1, 1]) {
+    parts.push([rbox(R * 0.9, R * 0.75, 2.1, 0.05), blockColor(rnd), M(side * (R * 0.78 + 0.9), topY - 1.1 - R * 0.3, -0.02)]);
+  }
+  parts.push([rbox(4.2, 1.7, 2.5, 0.08), blockColor(rnd, C.mid), M(0, topY + 1.85, 0)]);
+  return grime(merge(parts), -3, 2, 0.4);
+}
+
+export function makeBigArch(span = 15, height = 10) {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(cached(`arch-${span}-${height}`, () => buildBigArch(span, height)), mats.stoneV);
+  m.castShadow = true;
+  g.add(m);
+  const R = span / 2;
+  const glyph = new THREE.Mesh(geo('globe'), mats.ibadGlow);
+  glyph.position.set(0, height - R - 1 + 0.45 + R + 4.45, -1.3);
+  glyph.scale.setScalar(2.2);
+  g.add(glyph);
   return g;
+}
+
+function buildLintel() {
+  const rnd = mulberry32(5);
+  const parts = [];
+  for (const side of [-1, 1]) {
+    let y = -2.9;
+    while (y < 1.2) {
+      const h = Math.min(0.7 + rnd() * 0.5, 1.2 - y);
+      parts.push([rbox(1.05, h - 0.04, 1.45, 0.06), blockColor(rnd), M(side * 4.62, y + h / 2, 0)]);
+      y += h;
+    }
+  }
+  parts.push([rbox(10.6, 0.72, 1.35, 0.06), blockColor(rnd, C.light), M(0, 1.56, 0)]);
+  for (let i = -4; i <= 4; i += 2) {
+    for (const z of [-0.7, 0.7]) {
+      parts.push([new THREE.CylinderGeometry(0.22, 0.26, 0.08, 12), blockColor(rnd, C.cream), M(i, 1.56, z, Math.PI / 2, 0, 0)]);
+    }
+  }
+  parts.push([rbox(11.2, 0.32, 1.65, 0.04), blockColor(rnd, C.mid), M(0, 2.08, 0)]);
+  parts.push([rbox(3, 0.6, 1.4, 0.05), blockColor(rnd, C.cream), M(0, 2.5, 0)]);
+  return grime(merge(parts), -2.9, 0.5, 0.35);
+}
+
+function buildGantry() {
+  const parts = [];
+  for (const side of [-1, 1]) {
+    parts.push([rbox(0.7, 4.4, 0.7, 0.04), C.metalDark, M(side * 4.62, -0.7, 0)]);
+    for (let y = -2.4; y < 1; y += 0.9) parts.push([rbox(0.08, 1.1, 0.08, 0.01), C.metal, M(side * 4.62, y, 0.4, 0, 0, side * 0.6)]);
+  }
+  parts.push([rbox(10.4, 0.16, 1.2, 0.02), C.metal, M(0, 1.3, 0)]);
+  parts.push([rbox(10.4, 0.16, 1.2, 0.02), C.metal, M(0, 1.86, 0)]);
+  parts.push([rbox(10.4, 0.5, 0.12, 0.02), C.metalDark, M(0, 1.58, 0)]);
+  for (let i = 0; i < 12; i++) {
+    parts.push([rbox(0.42, 0.42, 0.14, 0.01), i % 2 ? C.black : C.hazard, M(-4.6 + i * 0.84, 1.58, -0.62, 0, 0, Math.PI / 4)]);
+  }
+  return merge(parts);
 }
 
 export function makeLintel(metal = false) {
-  const g = new THREE.Group();
-  const mat = metal ? mats.metal : mats.stone;
-  const beam = new THREE.Mesh(geo('box'), mat);
-  beam.scale.set(10.2, 0.75, 1.3);
-  beam.position.y = 1.6;
-  g.add(beam);
-  for (const sx of [-4.6, 4.6]) {
-    const p = new THREE.Mesh(geo('box'), metal ? mats.metalDark : mats.stoneDark);
-    p.scale.set(1.0, 5.2, 1.4);
-    p.position.set(sx, -0.6, 0);
-    g.add(p);
-  }
   if (metal) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(cached('gantry', buildGantry), mats.metalV));
     for (const sx of [-3, -1, 1, 3]) {
       const l = new THREE.Mesh(geo('globe'), mats.spiceGlow);
-      l.position.set(sx, 1.2, -0.66);
-      l.scale.setScalar(0.5);
+      l.position.set(sx, 1.18, -0.6);
+      l.scale.setScalar(0.45);
       g.add(l);
     }
-  } else {
-    const top = new THREE.Mesh(geo('box'), mats.stoneDark);
-    top.scale.set(11, 0.4, 1.6);
-    top.position.y = 2.15;
-    g.add(top);
+    return g;
   }
-  return g;
+  return new THREE.Mesh(cached('lintel', buildLintel), mats.stoneV);
+}
+
+function buildRubble(seed) {
+  const rnd = mulberry32(seed);
+  const parts = [];
+  let x = -3.95;
+  while (x < 3.9) {
+    const w = Math.min(0.85 + rnd() * 0.9, 3.98 - x);
+    const h = 0.72 + rnd() * 0.24;
+    const d = 0.8 + rnd() * 0.3;
+    const b = chipped(rbox(w * 0.95, h, d, 0.08, 2), 0.05, 2.2, seed + parts.length);
+    parts.push([b, blockColor(rnd), M(x + w / 2, h / 2, (rnd() - 0.5) * 0.25, 0, (rnd() - 0.5) * 0.15, (rnd() - 0.5) * 0.05)]);
+    if (rnd() < 0.4) {
+      const s = 0.25 + rnd() * 0.25;
+      parts.push([chipped(rbox(s, s * 0.8, s, 0.05, 1), 0.03, 4, seed + 50 + parts.length), blockColor(rnd), M(x + w / 2, s * 0.4, (rnd() < 0.5 ? -1 : 1) * 0.65, rnd(), rnd(), rnd())]);
+    }
+    x += w;
+  }
+  return grime(merge(parts), 0, 0.5, 0.3);
 }
 
 export function makeRubbleWall(rnd) {
-  const g = new THREE.Group();
-  let x = -3.9;
-  while (x < 3.9) {
-    const w = Math.min(0.9 + rnd() * 0.9, 3.95 - x);
-    const h = 0.75 + rnd() * 0.25;
-    const b = new THREE.Mesh(geo('box'), rnd() < 0.5 ? mats.stone : mats.stoneDark);
-    b.scale.set(w * 0.96, h, 0.8 + rnd() * 0.3);
-    b.position.set(x + w / 2, h / 2, (rnd() - 0.5) * 0.25);
-    b.rotation.y = (rnd() - 0.5) * 0.15;
-    b.castShadow = true;
-    g.add(b);
-    x += w;
+  const v = Math.floor(rnd() * 4);
+  return new THREE.Mesh(cached(`rubble-${v}`, () => buildRubble(300 + v * 17)), mats.stoneV);
+}
+
+function buildPipe() {
+  const parts = [];
+  parts.push([new THREE.CylinderGeometry(0.42, 0.42, 9.2, 20), C.rust, M(0, 0.55, 0, 0, 0, Math.PI / 2)]);
+  for (const sx of [-4.4, -1.5, 1.5, 4.4]) {
+    parts.push([new THREE.CylinderGeometry(0.54, 0.54, 0.16, 20), C.metal, M(sx, 0.55, 0, 0, 0, Math.PI / 2)]);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      parts.push([new THREE.CylinderGeometry(0.035, 0.035, 0.24, 6), C.metalDark, M(sx, 0.55 + Math.sin(a) * 0.47, Math.cos(a) * 0.47, 0, 0, Math.PI / 2)]);
+    }
   }
-  return g;
+  for (const sx of [-3, 0, 3]) {
+    parts.push([rbox(0.18, 0.5, 0.9, 0.02), C.metalDark, M(sx, 0.25, 0)]);
+    parts.push([rbox(0.5, 0.06, 1.1, 0.02), C.metalDark, M(sx, 0.03, 0)]);
+    parts.push([new THREE.TorusGeometry(0.46, 0.05, 6, 20, Math.PI), C.metalDark, M(sx, 0.55, 0, 0, Math.PI / 2, Math.PI)]);
+  }
+  for (const sx of [-3.9, 3.9]) {
+    for (let k = 0; k < 4; k++) parts.push([new THREE.CylinderGeometry(0.43, 0.43, 0.12, 20), k % 2 ? C.black : C.hazard, M(sx + (k - 1.5) * 0.12, 0.55, 0, 0, 0, Math.PI / 2)]);
+  }
+  return shade(merge(parts), (x, y, z, nx, ny) => (ny < -0.3 ? 0.65 : 1) * (0.85 + 0.15 * Math.abs(Math.sin(x * 3.1))));
 }
 
 export function makePipe() {
   const g = new THREE.Group();
-  const pipe = new THREE.Mesh(cachedGeo('pipe', () => new THREE.CylinderGeometry(0.42, 0.42, 9, 14)), mats.rust);
-  pipe.rotation.z = Math.PI / 2;
-  pipe.position.y = 0.55;
-  pipe.castShadow = true;
-  g.add(pipe);
-  for (const sx of [-3.2, 0, 3.2]) {
-    const ring = new THREE.Mesh(cachedGeo('pipeRing', () => new THREE.TorusGeometry(0.46, 0.07, 6, 16)), mats.spiceGlow);
+  const m = new THREE.Mesh(cached('pipe', buildPipe), mats.metalV);
+  m.castShadow = true;
+  g.add(m);
+  for (const sx of [-3, 0, 3]) {
+    const ring = new THREE.Mesh(cached('pipeRing', () => new THREE.TorusGeometry(0.44, 0.04, 6, 24)), mats.spiceGlow);
     ring.rotation.y = Math.PI / 2;
-    ring.position.set(sx, 0.55, 0);
+    ring.position.set(sx + 0.75, 0.55, 0);
     g.add(ring);
-    const sup = new THREE.Mesh(geo('box'), mats.metalDark);
-    sup.scale.set(0.25, 0.4, 0.6);
-    sup.position.set(sx + 0.8, 0.2, 0);
-    g.add(sup);
   }
   return g;
 }
 
+function boneCurve() {
+  const pts = [];
+  for (let i = 0; i <= 18; i++) {
+    const a = Math.PI * (i / 18);
+    pts.push(new THREE.Vector3(-Math.cos(a) * 5.4, -2.8 + Math.sin(a) * 9.0 + Math.sin(a * 2) * 0.4, Math.sin(a) * -1.2));
+  }
+  return new THREE.CatmullRomCurve3(pts);
+}
+
+function buildBoneArch() {
+  const parts = [];
+  const curve = boneCurve();
+  for (const dz of [-0.9, 0.9]) {
+    parts.push([new THREE.TubeGeometry(curve, 48, 0.3, 10, false), C.bone, M(0, 0, dz)]);
+    for (let i = 1; i < 12; i++) {
+      const p = curve.getPoint(i / 12);
+      parts.push([new THREE.SphereGeometry(0.36 + (i % 2) * 0.06, 10, 8), C.bone, M(p.x, p.y, p.z + dz, 0, 0, 0, 1, 0.75, 1.1)]);
+    }
+  }
+  for (let i = -4; i <= 4; i++) {
+    parts.push([new THREE.CylinderGeometry(0.3, 0.3, 0.85, 12), C.bone, M(i * 0.98, 1.55, 0, 0, 0, Math.PI / 2)]);
+    parts.push([new THREE.CylinderGeometry(0.42, 0.42, 0.14, 12), C.boneDark, M(i * 0.98 + 0.49, 1.55, 0, 0, 0, Math.PI / 2)]);
+    parts.push([new THREE.ConeGeometry(0.1, 0.45, 6), C.bone, M(i * 0.98, 1.95, 0)]);
+  }
+  for (const sx of [-4.4, 4.4]) {
+    parts.push([new THREE.CylinderGeometry(0.24, 0.34, 4.4, 10), C.bone, M(sx, -0.6, 0)]);
+    parts.push([new THREE.SphereGeometry(0.42, 10, 8), C.bone, M(sx, 1.55, 0)]);
+  }
+  return grime(merge(parts), -2.8, 1.5, 0.45);
+}
+
+export function makeBoneArch() {
+  return new THREE.Mesh(cached('boneArch', buildBoneArch), mats.boneV);
+}
+
+function buildCrater() {
+  return radialSurface({
+    seg: 28, rings: 6, capTop: false,
+    radius: (th, t) => (1.55 - t * 0.75) * (1 + N3(Math.sin(th) * 2, t, Math.cos(th) * 2) * 0.15),
+    height: (th, t) => Math.sin(t * Math.PI * 0.9) * 0.35 - t * 0.05,
+    color: (th, t, x, y, z, c) => c.copy(C.dark).lerp(C.rust, t).multiplyScalar(0.5 + t * 0.3),
+  });
+}
+
 export function makeGeyser() {
   const g = new THREE.Group();
-  const ring = new THREE.Mesh(cachedGeo('ventRing', () => new THREE.TorusGeometry(0.9, 0.28, 8, 18)), mats.rock);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.08;
-  g.add(ring);
-  const disc = new THREE.Mesh(cachedGeo('ventDisc', () => new THREE.CircleGeometry(0.85, 18)), mats.vent.clone());
+  g.add(new THREE.Mesh(cached('crater', buildCrater), mats.rock));
+  const disc = new THREE.Mesh(cached('ventDisc', () => new THREE.CircleGeometry(0.85, 20)), mats.vent.clone());
   disc.rotation.x = -Math.PI / 2;
-  disc.position.y = 0.03;
+  disc.position.y = 0.08;
   g.add(disc);
-  const col = new THREE.Mesh(cachedGeo('eruption', () => {
-    const c = new THREE.CylinderGeometry(0.5, 1.1, 1, 14, 1, true);
+  const colm = new THREE.Mesh(cached('eruption', () => {
+    const c = new THREE.CylinderGeometry(0.5, 1.1, 1, 16, 1, true);
     c.translate(0, 0.5, 0);
     return c;
   }), mats.eruption);
-  col.scale.set(1, 0.01, 1);
-  col.visible = false;
-  g.add(col);
-  return { group: g, disc, col };
+  colm.scale.set(1, 0.01, 1);
+  colm.visible = false;
+  g.add(colm);
+  return { group: g, disc, col: colm };
 }
 
-/* ---------------- Pickups ---------------- */
+/* ================= Pickups ================= */
 
 export function makeSpiceOrb() {
   const g = new THREE.Group();
@@ -267,13 +497,13 @@ export function makePowerup(type) {
   const g = new THREE.Group();
   let core, halo;
   if (type === 'shield') {
-    core = new THREE.Mesh(cachedGeo('puShield', () => new THREE.IcosahedronGeometry(0.5, 1)), mats.shieldPU);
+    core = new THREE.Mesh(cached('puShield', () => new THREE.IcosahedronGeometry(0.5, 1)), mats.shieldPU);
     halo = new THREE.Sprite(mats.shieldHalo);
   } else if (type === 'trance') {
-    core = new THREE.Mesh(cachedGeo('puTrance', () => { const o = new THREE.OctahedronGeometry(0.45, 0); o.scale(0.7, 1.4, 0.7); return o; }), mats.trancePU);
+    core = new THREE.Mesh(cached('puTrance', () => { const o = new THREE.OctahedronGeometry(0.45, 0); o.scale(0.7, 1.4, 0.7); return o; }), mats.trancePU);
     halo = new THREE.Sprite(mats.tranceHalo);
   } else {
-    const t = makeOrnithopter(0.16, mats.thopterPU);
+    const t = makeOrnithopter(0.16, true);
     core = t.group;
     g.userData.thopter = t;
     halo = new THREE.Sprite(mats.thopterHalo);
@@ -284,180 +514,253 @@ export function makePowerup(type) {
   return g;
 }
 
-/* ---------------- Vehicles & set pieces ---------------- */
+/* ================= Vehicles ================= */
 
-export function makeOrnithopter(scale = 1, bodyMat = mats.metal) {
+function buildThopterBody(gold) {
+  const hull = gold ? C.brass : col('#8d7c68');
+  const dark = gold ? C.brass : C.metalDark;
+  const prof = [[0.001, -3.3], [0.45, -3.0], [0.8, -2.4], [0.98, -1.4], [1.02, -0.2], [0.92, 0.9], [0.62, 1.9], [0.36, 3.0], [0.22, 4.6], [0.16, 5.6], [0.001, 5.7]];
+  const parts = [];
+  const body = lathe(prof, 20);
+  body.rotateX(Math.PI / 2);
+  body.scale(1, 0.82, 1);
+  parts.push([body, hull, null]);
+  parts.push([new THREE.TorusGeometry(0.93, 0.05, 6, 24), dark, M(0, 0, -1.2, 0, 0, 0, 1, 0.82, 1)]);
+  parts.push([new THREE.TorusGeometry(0.95, 0.05, 6, 24), dark, M(0, 0, 0.6, 0, 0, 0, 1, 0.82, 1)]);
+  for (const sx of [-1, 1]) {
+    parts.push([new THREE.CylinderGeometry(0.32, 0.26, 2.4, 14), dark, M(sx * 1.1, -0.25, 0.9, Math.PI / 2, 0, 0)]);
+    parts.push([new THREE.TorusGeometry(0.33, 0.06, 6, 14), hull, M(sx * 1.1, -0.25, -0.3)]);
+    parts.push([rbox(0.5, 0.3, 0.9, 0.06), dark, M(sx * 0.62, 0.62, -0.5)]);
+    parts.push([rbox(0.5, 0.3, 0.9, 0.06), dark, M(sx * 0.62, 0.62, 0.95)]);
+    parts.push([new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), dark, M(sx * 0.7, -1.1, -0.9, 0, 0, sx * 0.3)]);
+    parts.push([new THREE.CylinderGeometry(0.05, 0.05, 1.1, 6), dark, M(sx * 0.7, -1.1, 1.3, 0, 0, sx * 0.3)]);
+    parts.push([new THREE.CylinderGeometry(0.07, 0.07, 3.6, 8), dark, M(sx * 0.88, -1.6, 0.2, Math.PI / 2, 0, 0)]);
+  }
+  parts.push([rbox(0.08, 1.3, 1.1, 0.03), hull, M(0, 0.75, 5.0, -0.3, 0, 0)]);
+  parts.push([rbox(2.2, 0.06, 0.7, 0.03), hull, M(0, 0.15, 5.2)]);
+  return shade(merge(parts), (x, y, z, nx, ny) => (ny < -0.4 ? 0.7 : 1));
+}
+
+function buildWing(gold) {
+  const spar = gold ? C.brass : C.metal;
+  const parts = [];
+  parts.push([new THREE.CylinderGeometry(0.07, 0.035, 5.8, 8), spar, M(2.9, 0, -0.45, 0, 0, Math.PI / 2)]);
+  for (let i = 1; i <= 4; i++) {
+    const x = i * 1.25;
+    const len = 1.35 - i * 0.18;
+    parts.push([new THREE.CylinderGeometry(0.025, 0.02, len, 5), spar, M(x, 0, -0.45 + len / 2, Math.PI / 2, 0, 0)]);
+  }
+  parts.push([rbox(0.4, 0.22, 0.5, 0.05), gold ? C.brass : C.metalDark, M(0.15, 0, -0.3)]);
+  return merge(parts);
+}
+
+function wingMembrane() {
+  const s = new THREE.Shape();
+  s.moveTo(0, -0.45);
+  s.quadraticCurveTo(3, -0.62, 5.8, -0.45);
+  s.quadraticCurveTo(5.5, 0.1, 4.2, 0.5);
+  s.quadraticCurveTo(2, 0.95, 0, 0.75);
+  s.lineTo(0, -0.45);
+  const g = new THREE.ShapeGeometry(s, 10);
+  g.rotateX(Math.PI / 2);
+  return g;
+}
+
+export function makeOrnithopter(scale = 1, gold = false) {
   const g = new THREE.Group();
   const inner = new THREE.Group();
   inner.scale.setScalar(scale);
   g.add(inner);
-  const body = new THREE.Mesh(cachedGeo('thBody', () => { const c = new THREE.CapsuleGeometry(0.9, 3.2, 6, 12); c.rotateX(Math.PI / 2); return c; }), bodyMat);
+  const bodyMat = gold ? mats.thopterPU : mats.metalV;
+  const body = new THREE.Mesh(cached(`thBody-${gold}`, () => buildThopterBody(gold)), bodyMat);
+  body.castShadow = true;
   inner.add(body);
-  const cockpit = new THREE.Mesh(cachedGeo('thCock', () => new THREE.SphereGeometry(0.85, 16, 12)), mats.glass);
-  cockpit.scale.set(1, 0.85, 1.25);
-  cockpit.position.set(0, 0.15, -1.9);
-  inner.add(cockpit);
-  const tail = new THREE.Mesh(cachedGeo('thTail', () => { const c = new THREE.CylinderGeometry(0.28, 0.12, 3.6, 8); c.rotateX(Math.PI / 2); return c; }), bodyMat);
-  tail.position.set(0, 0.2, 3.6);
-  inner.add(tail);
-  const fin = new THREE.Mesh(geo('box'), bodyMat);
-  fin.scale.set(0.08, 1.1, 0.9);
-  fin.position.set(0, 0.8, 5.0);
-  inner.add(fin);
+  const canopy = new THREE.Mesh(cached('thCanopy', () => new THREE.SphereGeometry(0.85, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55)), mats.glass);
+  canopy.scale.set(0.92, 0.9, 1.5);
+  canopy.position.set(0, 0.25, -1.75);
+  inner.add(canopy);
   const wings = [];
-  const wingGeo = cachedGeo('thWing', () => { const b = new THREE.BoxGeometry(5.6, 0.05, 1.2); b.translate(2.8, 0, 0); return b; });
-  for (const [z, phase] of [[-0.5, 0], [0.9, Math.PI]]) {
+  const wingGeo = cached(`thWing-${gold}`, () => buildWing(gold));
+  const memGeo = cached('thMembrane', wingMembrane);
+  for (const [z, phase] of [[-0.5, 0], [0.95, Math.PI * 0.85]]) {
     for (const side of [1, -1]) {
       const pivot = new THREE.Group();
-      pivot.position.set(side * 0.7, 0.75, z);
+      pivot.position.set(side * 0.72, 0.68, z);
       if (side < 0) pivot.rotation.y = Math.PI;
-      const w = new THREE.Mesh(wingGeo, mats.wing);
-      pivot.add(w);
+      pivot.add(new THREE.Mesh(wingGeo, bodyMat));
+      pivot.add(new THREE.Mesh(memGeo, mats.wing));
       inner.add(pivot);
       wings.push({ pivot, phase, side });
     }
   }
-  for (const sx of [-0.45, 0.45]) {
+  for (const sx of [-1.1, 1.1]) {
     const e = new THREE.Mesh(geo('globe'), mats.ibadGlow);
-    e.position.set(sx, -0.1, 2.0);
-    e.scale.setScalar(0.9);
+    e.position.set(sx, -0.25, 2.12);
+    e.scale.set(1.3, 1.3, 0.5);
     inner.add(e);
   }
   const offset = Math.random() * 10;
   return {
     group: g,
     update(t) {
-      for (const w of wings) w.pivot.rotation.z = Math.sin(t * 28 + offset + w.phase) * 0.45 * (w.side < 0 ? -1 : 1);
-    },
-  };
-}
-
-export function makeHarvester() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(geo('box'), mats.rust);
-  body.scale.set(22, 9, 36);
-  body.position.y = 7;
-  g.add(body);
-  const top = new THREE.Mesh(geo('box'), mats.metal);
-  top.scale.set(14, 5, 16);
-  top.position.set(0, 13.5, -4);
-  g.add(top);
-  const tower = new THREE.Mesh(geo('box'), mats.metalDark);
-  tower.scale.set(4, 9, 4);
-  tower.position.set(5, 18, 6);
-  g.add(tower);
-  for (const sx of [-11, 11]) {
-    for (const sz of [-12, 12]) {
-      const tread = new THREE.Mesh(geo('box'), mats.metalDark);
-      tread.scale.set(5, 5, 14);
-      tread.position.set(sx, 2.2, sz);
-      g.add(tread);
-    }
-  }
-  const scoop = new THREE.Mesh(geo('box'), mats.spiceGlow);
-  scoop.scale.set(16, 1, 2);
-  scoop.position.set(0, 1.4, -18.5);
-  g.add(scoop);
-  const lights = [];
-  for (const sx of [-8, 0, 8]) {
-    const l = new THREE.Mesh(geo('globe'), mats.globe);
-    l.scale.setScalar(2.5);
-    l.position.set(sx, 11.8, -18.2);
-    g.add(l);
-    lights.push(l);
-  }
-  const puffs = [];
-  for (let i = 0; i < 14; i++) {
-    const s = new THREE.Sprite(mats.plume);
-    g.add(s);
-    puffs.push({ s, t: i / 14 });
-  }
-  return {
-    group: g,
-    update(dt) {
-      for (const p of puffs) {
-        p.t = (p.t + dt * 0.12) % 1;
-        const k = p.t;
-        p.s.position.set(Math.sin(k * 9 + p.t) * 6 * k, 4 + k * 55, 18 + k * 40);
-        p.s.scale.setScalar(10 + k * 50);
+      for (const w of wings) {
+        const a = Math.sin(t * 26 + offset + w.phase);
+        w.pivot.rotation.z = a * 0.5 * (w.side < 0 ? -1 : 1);
+        w.pivot.rotation.x = Math.cos(t * 26 + offset + w.phase) * 0.12;
       }
     },
   };
 }
 
-export function makeBigArch(span = 13, height = 9) {
-  const g = new THREE.Group();
-  for (const sx of [-span / 2, span / 2]) {
-    const leg = new THREE.Mesh(geo('box'), mats.stone);
-    leg.scale.set(1.8, height + 3, 1.8);
-    leg.position.set(sx, (height + 3) / 2 - 3, 0);
-    leg.castShadow = true;
-    g.add(leg);
+function buildHarvester() {
+  const rnd = mulberry32(9);
+  const parts = [];
+  const rust = (k = 0.08) => vary(C.rust, rnd, k);
+  parts.push([rbox(22, 7, 34, 0.6), rust(), M(0, 7.5, 0)]);
+  parts.push([rbox(20, 5, 10, 0.5), rust(), M(0, 9.2, -16, -0.5, 0, 0)]);
+  parts.push([rbox(17, 4, 24, 0.5), vary(C.metal, rnd), M(0, 12.5, 2)]);
+  parts.push([rbox(8, 6, 8, 0.4), vary(C.metal, rnd), M(-4, 17, 6)]);
+  parts.push([rbox(6.5, 2, 6.5, 0.3), C.metalDark, M(-4, 20.6, 6)]);
+  for (const sx of [3, 6]) parts.push([new THREE.CylinderGeometry(0.8, 1, 9, 12), C.metalDark, M(sx, 18.5, 10)]);
+  parts.push([new THREE.CylinderGeometry(0.15, 0.15, 8, 6), C.metalDark, M(-6, 26, 6)]);
+  parts.push([rbox(2, 2, 26, 0.3), C.metalDark, M(7, 17, -8, 0.45, 0, 0)]);
+  parts.push([rbox(1.2, 6, 1.2, 0.2), C.metalDark, M(7, 12, -19, 0.2, 0, 0)]);
+  for (const sx of [-11.5, 11.5]) {
+    for (const sz of [-11, 11]) {
+      parts.push([rbox(5.5, 5.5, 15, 1.2), C.metalDark, M(sx, 2.6, sz)]);
+      for (let k = 0; k < 14; k++) parts.push([rbox(5.8, 0.5, 0.45, 0.1), C.black, M(sx, 5.3, sz - 6.8 + k * 1.05)]);
+    }
   }
-  const top = new THREE.Mesh(geo('box'), mats.stone);
-  top.scale.set(span + 3, 1.6, 2.2);
-  top.position.y = height + 0.8;
-  top.castShadow = true;
-  g.add(top);
-  const crown = new THREE.Mesh(geo('box'), mats.stoneDark);
-  crown.scale.set(4, 1.8, 2.4);
-  crown.position.y = height + 2.5;
-  g.add(crown);
-  const glyph = new THREE.Mesh(geo('globe'), mats.ibadGlow);
-  glyph.position.set(0, height + 2.5, -1.25);
-  glyph.scale.setScalar(2);
-  g.add(glyph);
-  return g;
+  parts.push([rbox(18, 2.2, 3, 0.3), C.metalDark, M(0, 1.6, -19)]);
+  for (let k = 0; k < 14; k++) parts.push([new THREE.ConeGeometry(0.35, 1.4, 6), C.metal, M(-8.4 + k * 1.3, 0.4, -20.6, -Math.PI / 2 - 0.6, 0, 0)]);
+  for (let k = 0; k < 10; k++) parts.push([rbox(1.6, 0.6, 0.2, 0.05), k % 2 ? C.black : C.hazard, M(-9 + k * 2, 4.4, -17.05)]);
+  return shade(merge(parts), (x, y) => 0.6 + 0.4 * smoothstep(0, 10, y));
+}
+
+function buildHarvesterLights() {
+  const parts = [];
+  for (const sx of [-8, -4, 0, 4, 8]) parts.push([rbox(2.2, 0.8, 0.3), C.white, M(sx, 11, -21.2, -0.5, 0, 0)]);
+  for (const sx of [-6.5, -4, -1.5]) parts.push([rbox(1.6, 1.2, 0.2), C.white, M(sx, 17.5, 1.95)]);
+  parts.push([rbox(16, 0.6, 0.4), C.white, M(0, 0.9, -20.4)]);
+  return merge(parts);
+}
+
+export function makeHarvester() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(cached('harvester', buildHarvester), mats.metalV));
+  g.add(new THREE.Mesh(cached('harvLights', buildHarvesterLights), mats.globe));
+  const puffs = [];
+  for (let i = 0; i < 16; i++) {
+    const s = new THREE.Sprite(mats.plume);
+    g.add(s);
+    puffs.push({ s, t: i / 16 });
+  }
+  return {
+    group: g,
+    update(dt) {
+      for (const p of puffs) {
+        p.t = (p.t + dt * 0.11) % 1;
+        const k = p.t;
+        p.s.position.set(Math.sin(k * 9 + p.t) * 6 * k + 4.5, 22 + k * 50, 10 + k * 40);
+        p.s.scale.setScalar(6 + k * 46);
+      }
+    },
+  };
+}
+
+/* ================= Markers & small set dressing ================= */
+
+function buildObelisk() {
+  const rnd = mulberry32(3);
+  const parts = [];
+  parts.push([rbox(2.6, 0.5, 2.6, 0.05), blockColor(rnd, C.mid), M(0, -2.35, 0)]);
+  parts.push([rbox(2.1, 0.5, 2.1, 0.05), blockColor(rnd), M(0, -1.85, 0)]);
+  parts.push([rbox(1.7, 0.5, 1.7, 0.05), blockColor(rnd, C.mid), M(0, -1.35, 0)]);
+  const shaft = new THREE.CylinderGeometry(0.5, 0.82, 8.2, 4, 6);
+  shaft.rotateY(Math.PI / 4);
+  parts.push([shaft, C.light, M(0, 3.0, 0)]);
+  const tip = new THREE.ConeGeometry(0.71, 1.1, 4);
+  tip.rotateY(Math.PI / 4);
+  parts.push([tip, C.brass, M(0, 7.65, 0)]);
+  return grime(merge(parts), -2.6, 1, 0.35);
+}
+
+function buildObeliskGlyphs() {
+  const parts = [];
+  const rnd = mulberry32(12);
+  for (let face = 0; face < 4; face++) {
+    const ry = (face * Math.PI) / 2;
+    for (let k = 0; k < 7; k++) {
+      const y = k * 0.85;
+      // shaft half-width tapers from ~0.58 at its base (y=-1.1) to ~0.35 at the top (y=7.1)
+      const half = 0.58 - ((y + 1.1) / 8.2) * 0.23 + 0.015;
+      const m = new THREE.Matrix4().makeRotationY(ry).multiply(M((rnd() - 0.5) * 0.15, y, half, 0, 0, 0));
+      parts.push([new THREE.BoxGeometry(0.5 * (0.4 + rnd() * 0.5), 0.06, 0.02), C.white, m]);
+    }
+  }
+  return merge(parts);
 }
 
 export function makeObelisk() {
   const g = new THREE.Group();
-  const o = new THREE.Mesh(cachedGeo('obelisk', () => new THREE.CylinderGeometry(0.35, 0.9, 9, 4)), mats.stoneDark);
-  o.rotation.y = Math.PI / 4;
-  o.position.y = 1.9;
+  const o = new THREE.Mesh(cached('obelisk', buildObelisk), mats.stoneV);
   o.castShadow = true;
   g.add(o);
-  const gem = new THREE.Mesh(geo('globe'), mats.spiceGlow);
-  gem.position.y = 6.8;
-  gem.scale.setScalar(1.6);
-  g.add(gem);
+  g.add(new THREE.Mesh(cached('obGlyphs', buildObeliskGlyphs), mats.spiceGlow));
   const halo = new THREE.Sprite(mats.spiceHalo);
-  halo.position.y = 6.8;
-  halo.scale.setScalar(4);
+  halo.position.y = 7.9;
+  halo.scale.setScalar(3.5);
   g.add(halo);
   return g;
+}
+
+function buildLantern() {
+  const parts = [];
+  parts.push([lathe([[0.001, 0], [0.26, 0], [0.26, 0.08], [0.16, 0.14], [0.12, 0.5], [0.18, 0.56], [0.2, 0.62], [0.001, 0.62]], 16), C.light, null]);
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2;
+    parts.push([new THREE.CylinderGeometry(0.018, 0.018, 0.5, 5), C.brass, M(Math.sin(a) * 0.14, 0.84, Math.cos(a) * 0.14, Math.cos(a) * 0.25, 0, -Math.sin(a) * 0.25)]);
+  }
+  parts.push([new THREE.TorusGeometry(0.26, 0.022, 6, 24), C.brass, M(0, 1.08, 0, Math.PI / 2, 0, 0)]);
+  return merge(parts);
 }
 
 export function makeGlowPost() {
   const g = new THREE.Group();
-  const post = new THREE.Mesh(geo('box'), mats.stoneDark);
-  post.scale.set(0.28, 1.1, 0.28);
-  post.position.y = 0.55;
-  g.add(post);
+  g.add(new THREE.Mesh(cached('lantern', buildLantern), mats.metalV));
   const globe = new THREE.Mesh(geo('globe'), mats.globe);
-  globe.position.y = 1.55;
+  globe.position.y = 1.18;
+  globe.scale.setScalar(0.9);
   g.add(globe);
   const halo = new THREE.Sprite(mats.halo);
-  halo.position.y = 1.55;
-  halo.scale.setScalar(2.2);
+  halo.position.y = 1.18;
+  halo.scale.setScalar(2.4);
   g.add(halo);
   return g;
 }
 
+function buildThumper() {
+  const parts = [];
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2;
+    parts.push([new THREE.CylinderGeometry(0.04, 0.05, 1.2, 6), C.metalDark, M(Math.sin(a) * 0.35, 0.5, Math.cos(a) * 0.35, Math.cos(a) * 0.35, 0, -Math.sin(a) * 0.35)]);
+  }
+  parts.push([new THREE.CylinderGeometry(0.1, 0.12, 2.3, 10), C.metal, M(0, 1.15, 0)]);
+  for (let k = 0; k < 5; k++) parts.push([new THREE.TorusGeometry(0.13, 0.025, 6, 12), C.brass, M(0, 0.6 + k * 0.32, 0, Math.PI / 2, 0, 0)]);
+  return merge(parts);
+}
+
 export function makeThumper() {
   const g = new THREE.Group();
-  const pole = new THREE.Mesh(cachedGeo('thumpPole', () => new THREE.CylinderGeometry(0.1, 0.14, 2.4, 6)), mats.metal);
-  pole.position.y = 1.2;
-  g.add(pole);
-  const head = new THREE.Mesh(geo('box'), mats.metalDark);
-  head.scale.set(0.4, 0.5, 0.4);
+  g.add(new THREE.Mesh(cached('thumper', buildThumper), mats.metalV));
+  const head = new THREE.Mesh(cached('thumpHead', () => merge([[rbox(0.42, 0.5, 0.42, 0.06), C.metalDark, null], [new THREE.CylinderGeometry(0.06, 0.06, 0.3, 6), C.brass, M(0, 0.35, 0)]])), mats.metalV);
   head.position.y = 2.4;
   g.add(head);
   return { group: g, head };
 }
 
 export function makeWreck(rnd) {
-  const t = makeOrnithopter(1, mats.rust);
+  const t = makeOrnithopter(1);
   t.group.rotation.set(0.25, rnd() * Math.PI * 2, 0.5);
   t.update(rnd() * 10);
   return t.group;

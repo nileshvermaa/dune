@@ -73,7 +73,9 @@ export class Game {
     for (let i = 0; i < 3; i++) {
       const t = makeOrnithopter(1);
       this.scene.add(t.group);
-      this.flock.push({ t, a: Math.random() * 6.28, r: 70 + i * 30, h: 28 + i * 9, w: 0.12 + Math.random() * 0.08, dir: i % 2 ? 1 : -1 });
+      const f = { t, a: Math.random() * 6.28, r: 70 + i * 30, h: 28 + i * 9, w: 0.12 + Math.random() * 0.08, dir: i % 2 ? 1 : -1 };
+      t.group.position.set(Math.cos(f.a) * f.r, f.h, Math.sin(f.a) * f.r);
+      this.flock.push(f);
     }
 
     this.audio = new AudioEngine();

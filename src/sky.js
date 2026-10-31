@@ -37,7 +37,7 @@ vec3 moon(vec3 d, vec3 md, float size, vec3 tint, vec3 col) {
 void main() {
   vec3 d = normalize(vDir);
   float h = d.y;
-  vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.5));
+  vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.38));
   col = mix(col, uHorizon * 0.85, smoothstep(0.0, -0.25, h));
   float sd = max(dot(d, uSunDir), 0.0);
   col += uSunColor * (pow(sd, 6.0) * 0.28 + pow(sd, 60.0) * 0.6) * uSunVis;
@@ -59,12 +59,12 @@ void main() {
 
 const C = (r, g, b) => new THREE.Color(r, g, b);
 const PAL = {
-  dayZenith: C(0.08, 0.2, 0.52),
-  dayHorizon: C(0.95, 0.68, 0.42),
+  dayZenith: C(0.05, 0.17, 0.52),
+  dayHorizon: C(0.98, 0.74, 0.5),
   setZenith: C(0.22, 0.16, 0.34),
   setHorizon: C(1.0, 0.42, 0.16),
-  nightZenith: C(0.02, 0.03, 0.075),
-  nightHorizon: C(0.13, 0.12, 0.2),
+  nightZenith: C(0.035, 0.05, 0.12),
+  nightHorizon: C(0.2, 0.18, 0.28),
   sunDay: C(1.0, 0.88, 0.7),
   sunSet: C(1.0, 0.45, 0.2),
   moonLight: C(0.45, 0.55, 0.9),
@@ -154,7 +154,7 @@ export class Sky {
     const useSun = el > -0.06;
     const ldir = useSun ? sunDir : u.uMoon1.value;
     const sunI = smoothstep(-0.06, 0.12, el) * 3.1;
-    const moonI = night * 1.4;
+    const moonI = night * 1.05;
     this.sun.intensity = (useSun ? sunI : moonI) * (1 - atmo.haze * 0.6) + this.flash * 4;
     this.sun.color.copy(useSun ? u.uSunColor.value : PAL.moonLight);
     this.sun.position.copy(center).addScaledVector(ldir, 120);

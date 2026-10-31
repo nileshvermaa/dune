@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createNoise2D, smoothstep, hash2, mulberry32 } from './noise.js';
 import { tex, makeRock } from './props.js';
+import { detailed } from './materials.js';
 
 // Infinite dune field streamed in chunks around the player.
 // Dunes flatten into a sand bed along the causeway so the track always reads clearly.
@@ -24,14 +25,14 @@ export class Terrain {
     this.chunks = new Map();
     this.radius = 400;
     this.castShadow = false;
-    this.material = new THREE.MeshStandardMaterial({
+    this.material = detailed(new THREE.MeshStandardMaterial({
       vertexColors: true,
       map: tex.sand.map,
       normalMap: tex.sand.normalMap,
       normalScale: new THREE.Vector2(0.7, 0.7),
       roughness: 1,
       metalness: 0,
-    });
+    }), { scale: 0.035, strength: 0.18, bump: 0, sparkle: 1.4 });
     const idx = new Uint16Array(RES * RES * 6);
     let k = 0;
     for (let j = 0; j < RES; j++) {
@@ -169,11 +170,11 @@ export class Terrain {
       if (r < 0.18) {
         const w = 28 + rnd() * 45;
         rock = makeRock('mesa', Math.floor(rnd() * 4), w, 35 + rnd() * 55, w * (0.6 + rnd() * 0.6));
-        rock.position.set(i * STEP, H[k] + 4, j * STEP);
+        rock.position.set(i * STEP, H[k] - 5, j * STEP);
       } else {
         const s = 6 + rnd() * 10;
         rock = makeRock('spire', Math.floor(rnd() * 4), s, s * (2.5 + rnd() * 2), s);
-        rock.position.set(i * STEP, H[k] + s * 0.6, j * STEP);
+        rock.position.set(i * STEP, H[k] - 1.5, j * STEP);
       }
       rock.rotation.y = rnd() * Math.PI * 2;
       rock.castShadow = false;
