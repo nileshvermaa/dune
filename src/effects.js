@@ -1,0 +1,181 @@
+import * as THREE from 'three';
+
+// GPU-wrapped blowing sand around the camera, plus a CPU particle pool for bursts.
+
+const dustVert = /* glsl */ `
+uniform vec3 uCam; uniform vec3 uBox; uniform vec3 uWind; uniform float uTime; uniform float uScale; uniform float uSize;
+attribute float aRand;
+varying float vA;
+void main() {
+  vec3 p = position * uBox + uWind * uTime * (0.7 + aRand * 0.6);
+  p.y += sin(uTime * 1.3 + aRand * 40.0) * 0.6;
+  p = mod(p - uCam + uBox * 0.5, uBox) - uBox * 0.5 + uCam;
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  float dist = length(p - uCam);
+  vA = (1.0 - smoothstep(uBox.x * 0.25, uBox.x * 0.5, dist)) * smoothstep(3.0, 9.0, dist);
+  gl_PointSize = min(uSize * (0.5 + aRand) * uScale / -mv.z, 24.0);
+  gl_Position = projectionMatrix * mv;
+}`;
+const dustFrag = /* glsl */ `
+uniform vec3 uColor; uniform float uOpacity;
+varying float vA;
+void main() {
+  float d = length(gl_PointCoord - 0.5);
+  float a = smoothstep(0.5, 0.0, d) * vA * uOpacity;
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(uColor, a);
+}`;
+
+export class DustField {
+  constructor(scene, count = 6000) {
+    const pos = new Float32Array(count * 3);
+    const rnd = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = Math.random(); pos[i * 3 + 1] = Math.random(); pos[i * 3 + 2] = Math.random();
+      rnd[i] = Math.random();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
+    this.uniforms = {
+      uCam: { value: new THREE.Vector3() },
+      uBox: { value: new THREE.Vector3(90, 26, 90) },
+      uWind: { value: new THREE.Vector3(-9, 0, 4) },
+      uTime: { value: 0 },
+      uScale: { value: 400 },
+      uSize: { value: 0.35 },
+      uColor: { value: new THREE.Color(0.85, 0.65, 0.42) },
+      uOpacity: { value: 0.3 },
+    };
+    this.points = new THREE.Points(g, new THREE.ShaderMaterial({
+      uniforms: this.uniforms, vertexShader: dustVert, fragmentShader: dustFrag,
+      transparent: true, depthWrite: false,
+    }));
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+  }
+
+  update(time, cam, density, wind, color) {
+    const u = this.uniforms;
+    u.uTime.value = time;
+    u.uCam.value.copy(cam);
+    u.uOpacity.value = 0.12 + density * 0.55;
+    u.uSize.value = 0.1 + density * 0.22;
+    u.uWind.value.set(-9 * wind, -0.5 * wind, 4 * wind);
+    u.uColor.value.copy(color);
+  }
+
+  setScale(px) { this.uniforms.uScale.value = px; }
+}
+
+const poolVert = /* glsl */ `
+attribute float aSize; attribute float aAlpha; attribute vec3 aColor;
+uniform float uScale;
+varying float vA; varying vec3 vC;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vA = aAlpha * smoothstep(2.0, 6.0, -mv.z); vC = aColor;
+  gl_PointSize = min(aSize * uScale / max(0.1, -mv.z), 90.0);
+  gl_Position = projectionMatrix * mv;
+}`;
+const poolFrag = /* glsl */ `
+varying float vA; varying vec3 vC;
+void main() {
+  float d = length(gl_PointCoord - 0.5);
+  float a = exp(-d * d * 14.0) * vA;
+  if (a < 0.004) discard;
+  gl_FragColor = vec4(vC, a);
+}`;
+
+export class ParticlePool {
+  constructor(scene, max = 1500, additive = false) {
+    this.max = max;
+    this.pos = new Float32Array(max * 3);
+    this.vel = new Float32Array(max * 3);
+    this.col = new Float32Array(max * 3);
+    this.size = new Float32Array(max);
+    this.alpha = new Float32Array(max);
+    this.life = new Float32Array(max);
+    this.maxLife = new Float32Array(max);
+    this.grow = new Float32Array(max);
+    this.grav = new Float32Array(max);
+    this.drag = new Float32Array(max);
+    this.cursor = 0;
+    const g = new THREE.BufferGeometry();
+    this.aPos = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
+    this.aSize = new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage);
+    this.aAlpha = new THREE.BufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage);
+    this.aCol = new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('position', this.aPos);
+    g.setAttribute('aSize', this.aSize);
+    g.setAttribute('aAlpha', this.aAlpha);
+    g.setAttribute('aColor', this.aCol);
+    this.uniforms = { uScale: { value: 400 } };
+    this.points = new THREE.Points(g, new THREE.ShaderMaterial({
+      uniforms: this.uniforms, vertexShader: poolVert, fragmentShader: poolFrag,
+      transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    }));
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+    this.active = 0;
+  }
+
+  // o: { count, spread:[x,y,z], vel:[x,y,z], velSpread, life, size, grow, color:THREE.Color, gravity, drag, alpha }
+  emit(p, o) {
+    const n = o.count || 10;
+    const sp = o.spread || [0.5, 0.5, 0.5];
+    const v = o.vel || [0, 2, 0];
+    const vs = o.velSpread ?? 2;
+    const c = o.color || new THREE.Color(1, 1, 1);
+    for (let k = 0; k < n; k++) {
+      const i = this.cursor;
+      this.cursor = (this.cursor + 1) % this.max;
+      this.pos[i * 3] = p.x + (Math.random() - 0.5) * 2 * sp[0];
+      this.pos[i * 3 + 1] = p.y + (Math.random() - 0.5) * 2 * sp[1];
+      this.pos[i * 3 + 2] = p.z + (Math.random() - 0.5) * 2 * sp[2];
+      this.vel[i * 3] = v[0] + (Math.random() - 0.5) * 2 * vs;
+      this.vel[i * 3 + 1] = v[1] + (Math.random() - 0.5) * 2 * vs;
+      this.vel[i * 3 + 2] = v[2] + (Math.random() - 0.5) * 2 * vs;
+      const l = (o.life || 1) * (0.7 + Math.random() * 0.6);
+      this.life[i] = l; this.maxLife[i] = l;
+      this.size[i] = (o.size || 0.5) * (0.7 + Math.random() * 0.6);
+      this.grow[i] = o.grow || 0;
+      this.grav[i] = o.gravity ?? -4;
+      this.drag[i] = o.drag ?? 1;
+      this.col[i * 3] = c.r; this.col[i * 3 + 1] = c.g; this.col[i * 3 + 2] = c.b;
+      this.alpha[i] = o.alpha ?? 1;
+      this.baseAlpha = this.baseAlpha || new Float32Array(this.max);
+      this.baseAlpha[i] = o.alpha ?? 1;
+    }
+  }
+
+  update(dt) {
+    const ba = this.baseAlpha;
+    if (!ba) return;
+    for (let i = 0; i < this.max; i++) {
+      if (this.life[i] <= 0) { if (this.alpha[i] !== 0) { this.alpha[i] = 0; } continue; }
+      this.life[i] -= dt;
+      const d = Math.max(0, 1 - this.drag[i] * dt);
+      this.vel[i * 3] *= d; this.vel[i * 3 + 1] = this.vel[i * 3 + 1] * d + this.grav[i] * dt; this.vel[i * 3 + 2] *= d;
+      this.pos[i * 3] += this.vel[i * 3] * dt;
+      this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
+      this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
+      this.size[i] += this.grow[i] * dt;
+      const t = this.life[i] / this.maxLife[i];
+      this.alpha[i] = ba[i] * Math.min(1, t * 2.5) * Math.min(1, (1 - t) * 8 + 0.2);
+      if (this.life[i] <= 0) this.alpha[i] = 0;
+    }
+    this.aPos.needsUpdate = true;
+    this.aSize.needsUpdate = true;
+    this.aAlpha.needsUpdate = true;
+    this.aCol.needsUpdate = true;
+  }
+
+  clear() {
+    this.life.fill(0);
+    this.alpha.fill(0);
+    this.aAlpha.needsUpdate = true;
+  }
+
+  setScale(px) { this.uniforms.uScale.value = px; }
+}

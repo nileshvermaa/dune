@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a0f08" />
+    <meta name="description" content="Arrakis Run — an endless desert runner. Outrun the sandworm, harvest the spice, survive the deep desert." />
+    <title>Arrakis Run</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='30' fill='%23c8742a'/><circle cx='32' cy='32' r='14' fill='%231a0f08'/><circle cx='32' cy='32' r='6' fill='%235fb8ff'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="vignette"></div>
+      <div id="tint"></div>
+      <div id="flash"></div>
+
+      <div id="hud" class="hidden">
+        <div class="hud-top">
+          <div class="hud-score">
+            <div id="score">0</div>
+            <div class="hud-label">Score <span id="mult">x1</span></div>
+          </div>
+          <div class="hud-right">
+            <div class="hud-stat"><span class="spice-dot"></span><span id="spice">0</span></div>
+            <div class="hud-stat dim"><span id="dist">0</span><small>m</small></div>
+          </div>
+        </div>
+        <div id="worm-meter">
+          <div class="hud-label">Wormsign</div>
+          <div class="bar"><div id="worm-fill"></div></div>
+        </div>
+        <div id="powerups"></div>
+        <button id="pause-btn" aria-label="Pause">
+          <svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+        </button>
+      </div>
+
+      <div id="turn-hint" class="hidden"><span id="turn-arrow">&#10148;</span></div>
+      <div id="tip" class="hidden"></div>
+      <div id="zone-banner" class="hidden"><small>Entering</small><span id="zone-text"></span></div>
+      <div id="toasts"></div>
+
+      <section id="title" class="screen">
+        <div class="title-inner">
+          <div class="eyebrow">An endless desert run</div>
+          <h1><span>Arrakis</span><em>Run</em></h1>
+          <p class="tagline">Outrun the maker. Harvest the spice. Cross the deep desert before the sand takes you.</p>
+          <button id="play-btn" class="btn-primary">Begin the Run</button>
+          <div class="controls">
+            <div><kbd>&larr;</kbd><kbd>&rarr;</kbd><span>Shift lane / turn at corners</span></div>
+            <div><kbd>&uarr;</kbd><span>Jump</span></div>
+            <div><kbd>&darr;</kbd><span>Slide</span></div>
+            <div class="touch-only"><span>Swipe to move &middot; Tap to jump</span></div>
+          </div>
+          <div class="title-meta">
+            <div class="best">Best <strong id="best-title">0</strong></div>
+            <div class="toggles">
+              <button id="quality-btn" class="btn-ghost">Quality: High</button>
+              <button id="sound-btn" class="btn-ghost">Sound: On</button>
+            </div>
+          </div>
+          <ol id="runs-list" class="runs"></ol>
+        </div>
+        <footer>Fan-made tribute. Not affiliated with any Dune rights holder.</footer>
+      </section>
+
+      <section id="pause" class="screen hidden">
+        <div class="panel">
+          <h2>Paused</h2>
+          <button id="resume-btn" class="btn-primary">Resume</button>
+          <button id="quit-btn" class="btn-ghost">Abandon run</button>
+        </div>
+      </section>
+
+      <section id="over" class="screen hidden">
+        <div class="panel">
+          <div class="eyebrow" id="over-cause">The desert claims another</div>
+          <h2 id="over-title">Taken by the Maker</h2>
+          <div id="new-best" class="hidden">New best</div>
+          <div class="over-score" id="over-score">0</div>
+          <div class="over-stats">
+            <div><span id="over-dist">0</span><small>meters</small></div>
+            <div><span id="over-spice">0</span><small>spice</small></div>
+            <div><span id="over-best">0</span><small>best</small></div>
+          </div>
+          <button id="again-btn" class="btn-primary">Run Again</button>
+          <button id="menu-btn" class="btn-ghost">Main Menu</button>
+        </div>
+      </section>
+
+      <div id="loading"><div class="loader-ring"></div><div>Shaping the dunes&hellip;</div></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
