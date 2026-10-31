@@ -4,8 +4,8 @@ import { zoneAt } from './zones.js';
 import * as P from './props.js';
 import { SAND_BED } from './terrain.js';
 
-// The ancient causeway: straight segments joined by 90° corners, populated with
-// obstacles, spice, power-ups and zone-specific scenery.
+// The trail across open desert: straight segments joined by 90° corners the runner must turn
+// at, populated with obstacles, spice, power-ups and zone-specific scenery.
 
 export const LANE_W = 2.2;
 export const HALF_W = 3.6;
@@ -20,8 +20,9 @@ export const DIRS = [
 ];
 export const YAWS = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
 
+// Never stops climbing: a quick early ramp, then +2.5 m/s every kilometre, forever.
 export function speedAt(dist) {
-  return 15 + 19 * (1 - Math.exp(-dist / 4200));
+  return 14 + 6 * (1 - Math.exp(-dist / 1500)) + dist * 0.0025;
 }
 
 function deckGeometry(w, h, l) {
@@ -181,7 +182,7 @@ export class Track {
     this.reseat(line);
 
     this.populate(seg, first);
-    this.buildDeck(seg, first);
+    this.buildTrail(seg, first);
     this.dressSand(seg, first);
     this.decorate(seg, first);
     seg.group.traverse((o) => {
@@ -208,27 +209,28 @@ export class Track {
   populate(seg, first) {
     const rng = this.rng;
     const L = seg.length;
-    const diff = clamp(seg.startDist / 7000, 0, 1);
+    const diff = clamp(seg.startDist / 9000, 0, 1);
     const events = [];
-    seg.crossings = [];
-    if (!first && seg.startDist > 320 && L > 110) {
-      const chance = { desert: 0.7, shieldwall: 0.3, ruins: 0.3, spice: 0.6, storm: 0.45 }[seg.zone.id];
-      if (rng() < chance) {
-        const len = Math.min(L - 85, 60 + rng() * 55 + diff * 40);
-        const a = 38 + rng() * Math.max(0, L - 80 - len);
-        seg.crossings.push([a, a + len]);
-      }
+    // the old road survives only in scattered stretches of paving: the one ground the Maker
+    // cannot follow onto. They grow rarer and shorter the deeper into the desert you go.
+    seg.rocks = [];
+    if (first) seg.rocks.push([-60, 40]);
+    else if (L > 80 && rng() < 0.55 - diff * 0.25) {
+      const len = 16 + rng() * 22 * (1 - diff * 0.5);
+      const a = 25 + rng() * Math.max(0, L - 60 - len);
+      seg.rocks.push([a, a + len]);
     }
-    let s = first ? 90 : 32;
-    const endS = L - 30;
+    let s = first ? 70 : 30;
+    const endS = L - 26;
     while (s < endS) {
-      const cr = seg.crossings.find(([a, b]) => s > a - 10 && s < b + 8);
-      if (cr) { s = cr[1] + 14; continue; }
-      const early = seg.startDist + s < 350;
+      const early = seg.startDist + s < 300;
       const type = this.pickType(seg.zone, rng, early);
+      // sinkholes never open in the old paving
+      if (type === 'gap' && this.onRock(seg, s, -6)) { s += 6; continue; }
       events.push(this.placeObstacle(seg, type, s, rng, diff));
       const v = speedAt(seg.startDist + s);
-      s += Math.max(18, v * 1.15) + rng() * 16 * (1.25 - diff);
+      // reaction time between obstacles tightens slowly as the run goes on
+      s += Math.max(16, v * (1.15 - diff * 0.3)) + rng() * 14 * (1.2 - diff);
     }
     this.placePickups(seg, events, first);
   }
@@ -261,12 +263,44 @@ export class Track {
         g.add(mesh);
         this.addCollider(seg, { kind: type, mesh, s0: s - 0.75, s1: s + 0.75, x0: lane * LANE_W - 0.85, x1: lane * LANE_W + 0.85, y0: 0, y1: 20 });
       }
-    } else if (type === 'low' || type === 'pipe') {
-      const mesh = type === 'pipe' ? P.makePipe() : P.makeRubbleWall(rng);
+    } else if (type === 'low') {
+      // a tumbled wall: jump it, or run through the breach in it
+      const open = Math.floor(rng() * 3) - 1;
+      ev.free = [open];
+      ev.blocked = [-1, 0, 1].filter((l) => l !== open);
+      ev.jump = true;
+      for (const lane of ev.blocked) {
+        const mesh = P.makeRubbleWall(rng);
+        mesh.scale.set(0.29, 1, 1);
+        mesh.position.set(lane * LANE_W, 0, -s);
+        g.add(mesh);
+        this.addCollider(seg, { kind: type, mesh, s0: s - 0.45, s1: s + 0.45, x0: lane * LANE_W - 1.1, x1: lane * LANE_W + 1.1, y0: 0, y1: 0.95 });
+      }
+    } else if (type === 'pipe') {
+      const mesh = P.makePipe();
       mesh.position.z = -s;
       g.add(mesh);
       this.addCollider(seg, { kind: type, mesh, s0: s - 0.45, s1: s + 0.45, x0: -HALF_W, x1: HALF_W, y0: 0, y1: 0.95 });
       ev.jump = true;
+    } else if (type === 'tall') {
+      // a standing slab across two lanes: no jumping it, only around
+      const open = rng() < 0.5 ? -1 : 1;
+      ev.free = [open];
+      ev.blocked = [0, -open];
+      const mesh = P.makeRuinWall(rng);
+      mesh.scale.set(0.3, 0.55, 0.6);
+      mesh.position.set(-open * LANE_W * 0.5, -0.5, -s);
+      g.add(mesh);
+      const x0 = open < 0 ? -LANE_W * 0.5 : -HALF_W, x1 = open < 0 ? HALF_W : LANE_W * 0.5;
+      this.addCollider(seg, { kind: type, mesh, s0: s - 0.5, s1: s + 0.5, x0, x1, y0: 0, y1: 20 });
+    } else if (type === 'devil') {
+      // a dust devil sweeping back and forth across the trail
+      const mesh = P.makeDustDevil();
+      mesh.position.set(0, 0, -s);
+      g.add(mesh);
+      const col = this.addCollider(seg, { kind: 'devil', mesh, s0: s - 1.1, s1: s + 1.1, x0: -1, x1: 1, y0: 0, y1: 20 });
+      seg.animated.push({ type: 'devil', mesh, col, phase: rng() * 6.28, speed: 1.1 + diff * 0.9 + rng() * 0.4 });
+      ev.free = [];
     } else if (type === 'arch') {
       const z = seg.zone.id;
       const mesh = z === 'ruins' || z === 'shieldwall' ? P.makeLintel(false) : z === 'spice' ? P.makeLintel(true) : P.makeBoneArch(true);
@@ -351,12 +385,13 @@ export class Track {
       this.addPickup(seg, 'water', lane * LANE_W, 1.1, s);
     }
     this.addPickup(seg, 'cache', 0, 1.2, L - 2.5);
-    if (!first && intervals.length && rng() < 0.5) {
+    if (!first && intervals.length && rng() < 0.6) {
       const [a, b] = intervals[Math.floor(rng() * intervals.length)];
       const s = (a + b) / 2;
       const lane = Math.floor(rng() * 3) - 1;
       const r = rng();
-      const type = r < 0.28 ? 'shield' : r < 0.62 ? 'thumper' : r < 0.8 ? 'hooks' : 'thopter';
+      const type = r < 0.16 ? 'shield' : r < 0.38 ? 'thumper' : r < 0.54 ? 'hooks' : r < 0.64 ? 'thopter'
+        : r < 0.76 ? 'silence' : r < 0.88 ? 'seal' : 'rush';
       for (const p of seg.pickups) {
         if (Math.abs(p.s - s) < 3 && Math.abs(p.x - lane * LANE_W) < 0.5) { p.taken = true; p.mesh.visible = false; }
       }
@@ -364,9 +399,10 @@ export class Track {
     }
   }
 
-  inCrossing(seg, s, pad = 0) {
-    if (!seg.crossings) return false;
-    for (const [a, b] of seg.crossings) if (s > a + pad && s < b - pad) return true;
+  // on a surviving stretch of the old paving (safe from the Maker)
+  onRock(seg, s, pad = 0) {
+    if (!seg.rocks) return false;
+    for (const [a, b] of seg.rocks) if (s > a + pad && s < b - pad) return true;
     return false;
   }
 
@@ -375,299 +411,107 @@ export class Track {
     return false;
   }
 
-  buildDeck(seg, first) {
+  // The trail through open desert: no causeway any more. What the segment builds is the old
+  // road's surviving paving (safe ground), sinkholes, the turn markers, and the rock face that
+  // closes every corner (miss the turn and you run into it).
+  buildTrail(seg, first) {
     const L = seg.length;
     const g = seg.group;
     const rng = this.rng;
     const blocks = [];
     const add = (x, y, z, sx, sy, sz, color, ry = 0, rx = 0, rz = 0) => blocks.push({ x, y, z, sx, sy, sz, color, ry, rx, rz });
-    const addMesh = (geom, mat, x, y, z, receive = true) => {
-      seg.geos.push(geom);
-      const m = new THREE.Mesh(geom, mat);
-      m.position.set(x, y, z);
-      m.receiveShadow = receive;
-      m.userData.shadow = false;
-      g.add(m);
-      return m;
-    };
-    const coreMats = [P.mats.wall, P.mats.wall, P.mats.mortar, P.mats.wall, P.mats.wall, P.mats.wall];
     const tile = () => {
       const r = rng();
-      const base = r < 0.07 ? TILE.weathered : r < 0.12 ? TILE.cream : r < 0.16 ? TILE.red : TILE.base;
-      return base.clone().multiplyScalar(0.86 + rng() * 0.2);
+      const base = r < 0.12 ? TILE.weathered : r < 0.2 ? TILE.cream : r < 0.26 ? TILE.red : TILE.base;
+      return base.clone().multiplyScalar(0.84 + rng() * 0.2);
     };
-    // running-bond paving slabs, optionally broken off at the far end (gap edges)
-    const pave = (a, b, x0, x1, ragged = false) => {
+    // weathered paving: slabs sunk flush with the sand, ragged and missing toward the margins
+    for (const [a, b] of seg.rocks) {
       let s = a;
       while (s < b - 0.05) {
         const l = Math.min(1.3 + rng() * 0.55, b - s);
-        let x = x0;
-        while (x < x1 - 0.05) {
-          let w = [1.0, 1.35, 1.8, 2.2][Math.floor(rng() * 4)];
-          if (x1 - x - w < 0.75) w = x1 - x;
-          const ll = ragged && s + l >= b - 0.01 ? l * (0.45 + rng() * 0.55) : l;
-          add(x + w / 2, -0.13 + (rng() - 0.5) * 0.025, -(s + ll / 2), w - 0.07, 0.26, ll - 0.07, tile(), (rng() - 0.5) * 0.012, (rng() - 0.5) * 0.012, (rng() - 0.5) * 0.012);
+        const ends = Math.min(s - a, b - s - l);
+        let x = -3.9;
+        while (x < 3.9) {
+          const w = [1.0, 1.35, 1.8][Math.floor(rng() * 3)];
+          const edge = Math.abs(x + w / 2) / 3.9;
+          // keep the lanes complete; lose slabs at the sides and the broken ends
+          const keep = edge < 0.75 || rng() > edge * 0.9 - (ends > 3 ? 0 : 0.3);
+          if (keep) {
+            const sink = edge > 0.75 ? -0.05 - rng() * 0.08 : 0;
+            add(x + w / 2, -0.11 + sink, -(s + l / 2), w - 0.08, 0.24, l - 0.08, tile(), (rng() - 0.5) * 0.04, (rng() - 0.5) * 0.02, (rng() - 0.5) * 0.02);
+          }
           x += w;
         }
         s += l;
       }
-    };
-    // low parapet with a pilaster every 12m (lanterns sit on every other one)
-    const parapet = (side, a, b) => {
-      const x = side * 3.79;
-      const posts = [];
-      for (let p = Math.ceil(a / 12) * 12; p < b; p += 12) if (p > a + 0.4 && p < b - 0.4) posts.push(p);
-      let s = a;
-      for (const p of [...posts, b + 1]) {
-        const stop = Math.min(b, p - 0.36);
-        while (s < stop - 0.1) {
-          const l = Math.min(1.1 + rng() * 0.6, stop - s);
-          add(x, 0.11, -(s + l / 2), 0.42, 0.42, l - 0.04, TILE.parapet.clone().multiplyScalar(0.88 + rng() * 0.16));
-          s += l;
+      // a few toppled kerb stones mark where the stone begins and ends
+      for (const end of [a, b]) {
+        for (let k = 0; k < 3; k++) {
+          add((rng() < 0.5 ? -1 : 1) * (4.3 + rng() * 1.4), 0.12, -(end + (rng() - 0.5) * 2), 0.9 + rng() * 0.6, 0.45, 0.6 + rng() * 0.4, TILE.parapet.clone().multiplyScalar(0.85 + rng() * 0.2), rng() * 3, (rng() - 0.5) * 0.4, (rng() - 0.5) * 0.4);
         }
-        if (p <= b) {
-          add(x, 0.3, -p, 0.62, 0.8, 0.62, TILE.pilaster.clone().multiplyScalar(0.92 + rng() * 0.12));
-          add(x, 0.76, -p, 0.76, 0.12, 0.76, TILE.cap.clone());
-          s = p + 0.36;
-        }
-      }
-    };
-    // cornice, plinth and buttresses dressing the causeway walls
-    const walls = (a, b) => {
-      for (const side of [-1, 1]) {
-        for (let s = a; s < b - 0.05; s += 2) {
-          const l = Math.min(2, b - s);
-          add(side * 4.05, -0.28, -(s + l / 2), 0.3, 0.24, l - 0.02, TILE.cornice.clone().multiplyScalar(0.94 + rng() * 0.1));
-          add(side * 4.03, -2.45, -(s + l / 2), 0.26, 0.42, l - 0.02, TILE.buttress.clone());
-        }
-        for (let s = Math.ceil(a / 6) * 6 + 3; s < b - 0.5; s += 6) {
-          add(side * 4.2, -1.75, -s, 0.4, 2.5, 0.85, TILE.buttress.clone().multiplyScalar(0.9 + rng() * 0.15));
-          add(side * 4.16, -0.5, -s, 0.5, 0.18, 1.0, TILE.cornice.clone());
-        }
-      }
-    };
-    const piece = (a, b, raggedEnd) => {
-      const len = b - a;
-      if (len <= 0.05) return;
-      addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, len), coreMats, 0, -0.1 - DECK_DEPTH / 2, -(a + b) / 2);
-      pave(a, b, -3.58, 3.58, raggedEnd);
-      this.driftStrip(seg, -4.0, a, 0, 1, -1, 0, len);
-      this.driftStrip(seg, 4.0, a, 0, 1, 1, 0, len);
-      parapet(-1, a, b);
-      parapet(1, a, b);
-      walls(a, b);
-    };
-
-    let cur = first ? -60 : DECK_HALF;
-    const breaks = [...seg.gaps.map((g) => [g[0], g[1], 'gap']), ...(seg.crossings || []).map((c) => [c[0], c[1], 'sand'])].sort((x, y) => x[0] - y[0]);
-    for (const [a, b, kind] of breaks) {
-      piece(cur, a, true);
-      if (kind === 'sand') {
-        this.sandRoad(seg, a, b, blocks);
-        cur = b;
-        continue;
-      }
-      const pit = addMesh(new THREE.PlaneGeometry(DECK_HALF * 2, b - a), P.mats.dark, 0, SAND_BED + 0.25, -(a + b) / 2, false);
-      pit.rotation.x = -Math.PI / 2;
-      for (let k = 0; k < 4; k++) {
-        add((rng() - 0.5) * 6, SAND_BED + 0.35, -(a + rng() * (b - a)), 0.9 + rng() * 0.8, 0.26, 0.8 + rng() * 0.6, tile(), rng() * 3, (rng() - 0.5) * 0.6, (rng() - 0.5) * 0.6);
-      }
-      cur = b;
-    }
-    piece(cur, L - DECK_HALF, false);
-
-    // corner platform: square paving, closed parapets, inlaid medallion
-    addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, DECK_HALF * 2), coreMats, 0, -0.1 - DECK_DEPTH / 2, -L);
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 4; j++) {
-        add(-3.58 + 0.895 + i * 1.79, -0.13, -(L - 3.58 + 0.895 + j * 1.79), 1.72, 0.26, 1.72, tile());
       }
     }
-    for (let x = -3.58; x < 3.5; x += 1.43) add(x + 0.715, 0.11, -(L + 3.79), 1.39, 0.42, 0.42, TILE.parapet.clone().multiplyScalar(0.9 + rng() * 0.15));
-    const cs = -seg.turn;
-    for (let s = L - 3.58; s < L + 3.5; s += 1.43) add(cs * 3.79, 0.11, -(s + 0.715), 0.42, 0.42, 1.39, TILE.parapet.clone().multiplyScalar(0.9 + rng() * 0.15));
-    for (const [x, s] of [[cs * 3.79, L + 3.79], [-cs * 3.79, L + 3.79], [cs * 3.79, L - 3.79]]) {
-      add(x, 0.4, -s, 0.7, 1.0, 0.7, TILE.pilaster.clone());
-      add(x, 0.96, -s, 0.84, 0.14, 0.84, TILE.cap.clone());
+    // sinkholes: the sand pours away into darkness
+    for (const [a, b] of seg.gaps) {
+      const pit = new THREE.Mesh(P.geo('sinkhole') || P.makeSinkholeGeometry(), P.mats.sinkhole);
+      pit.scale.set(HALF_W + 1.2, 1, (b - a) / 2 + 0.4);
+      pit.position.set(0, 0.02, -(a + b) / 2);
+      pit.userData.shadow = false;
+      g.add(pit);
     }
-    for (const side of [-1, 1]) add(side * 4.05, -0.28, -L, 0.3, 0.24, 8, TILE.cornice.clone());
-    this.driftStrip(seg, -4.4, L + 4.0, 1, 0, 0, 1, 8.8);
-    this.driftStrip(seg, cs * 4.0, L - 4.0, 0, 1, cs, 0, 8.4);
-    add(0, -0.28, -(L + 4.05), 8.6, 0.24, 0.3, TILE.cornice.clone());
-    const medalGeo = MEDAL_DISC();
-    const medal = new THREE.Mesh(medalGeo, P.mats.tile);
-    medal.position.set(0, 0.008, -L);
-    medal.receiveShadow = true;
-    medal.userData.shadow = false;
-    g.add(medal);
-    const ring = new THREE.Mesh(MEDAL_RING(), P.mats.spiceGlow);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(0, 0.035, -L);
-    ring.userData.shadow = false;
-    g.add(ring);
 
+    // the turn: glowing arrows on the sand, a cairn on the outside, and a rock face ahead
     const arrowGeo = new THREE.PlaneGeometry(3.2, 3.2);
-    for (const ss of [L - 10, L - 5.5]) {
-      const arrow = addMesh(arrowGeo, P.mats.arrow, 0, 0.03, -ss, false);
+    seg.geos.push(arrowGeo);
+    for (const ss of [L - 16, L - 10, L - 4.5]) {
+      const arrow = new THREE.Mesh(arrowGeo, P.mats.arrow);
+      arrow.position.set(0, 0.05, -ss);
       arrow.rotation.set(-Math.PI / 2, 0, seg.turn < 0 ? Math.PI : 0);
       arrow.renderOrder = 2;
+      arrow.userData.shadow = false;
+      g.add(arrow);
     }
     const ob = P.makeObelisk();
     ob.position.set(-seg.turn * (DECK_HALF + 2.6), 0, -(L + DECK_HALF + 2.6));
     g.add(ob);
+    const cliff = P.makeRock('mesa', Math.floor(rng() * 4), 30, 26, 10);
+    cliff.position.set(-seg.turn * 6, -2, -(L + DECK_HALF + 9));
+    cliff.rotation.y = (rng() - 0.5) * 0.3;
+    cliff.userData.shadow = false;
+    g.add(cliff);
+    // running past the turning point means running into the rock: fatal
+    this.addCollider(seg, { kind: 'cliff', fatal: true, mesh: cliff, s0: L + DECK_HALF + 0.6, s1: L + DECK_HALF + 6, x0: -12, x1: 12, y0: -5, y1: 40 });
 
-    const im = new THREE.InstancedMesh(P.geo('block'), P.mats.tile, blocks.length);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
-    blocks.forEach((b, i) => {
-      q.setFromEuler(e.set(b.rx, b.ry, b.rz));
-      m4.compose(p.set(b.x, b.y, b.z), q, sc.set(b.sx, b.sy, b.sz));
-      im.setMatrixAt(i, m4);
-      im.setColorAt(i, b.color);
-    });
-    im.instanceMatrix.needsUpdate = true;
-    im.instanceColor.needsUpdate = true;
-    im.computeBoundingSphere();
-    im.receiveShadow = true;
-    im.castShadow = true;
-    im.userData.shadow = false;
-    g.add(im);
-    seg.disposables.push(im);
-  }
-
-  // Where dunes have buried the road: a walkable sand ridge with a few slabs poking through.
-  sandRoad(seg, a, b, blocks) {
-    const rng = this.rng;
-    const s0 = a - 2, s1 = b + 2;
-    const n = Math.max(2, Math.ceil((s1 - s0) / 1.2));
-    const xs = [-11, -8.5, -6.5, -5, -3.9, -2, 0, 2, 3.9, 5, 6.5, 8.5, 11];
-    const J = xs.length;
-    const pos = new Float32Array((n + 1) * J * 3);
-    const uv = new Float32Array((n + 1) * J * 2);
-    const col = new Float32Array((n + 1) * J * 3);
-    const w = new THREE.Vector3();
-    const c = new THREE.Color();
-    const noise = this.terrain.noise;
-    for (let i = 0; i <= n; i++) {
-      const s = s0 + ((s1 - s0) * i) / n;
-      // sand heaps up over the broken ends of the stone road
-      const heap = Math.max(0, 1 - Math.abs(s - a) / 3.5) + Math.max(0, 1 - Math.abs(s - b) / 3.5);
-      for (let j = 0; j < J; j++) {
-        const x = xs[j];
-        this.localToWorld(seg, x, s, w);
-        const ax = Math.abs(x);
-        const edge = smoothstepJS(3.9, 11, ax);
-        const ripple = noise(w.x * 0.3, w.z * 0.3) * 0.05;
-        let y = 0.02 + ripple + heap * 0.22 * (1 - edge);
-        y = y + (SAND_BED - 0.1 - y) * Math.pow(edge, 1.3);
-        const k = i * J + j;
-        pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = -s;
-        uv[k * 2] = w.x / 6; uv[k * 2 + 1] = w.z / 6;
-        c.copy(DRIFT_TOP).lerp(DRIFT_EDGE, edge * 0.9);
-        col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
-      }
-    }
-    const idx = [];
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < J - 1; j++) {
-        const p = i * J + j, q = p + 1, r = p + J, t = r + 1;
-        idx.push(p, q, r, q, t, r);
-      }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    if (g.attributes.normal.getY(Math.floor(J / 2)) < 0) {
-      for (let i = 0; i < idx.length; i += 3) { const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp; }
-      g.setIndex(idx);
-      g.computeVertexNormals();
-    }
-    seg.geos.push(g);
-    const m = new THREE.Mesh(g, this.terrain.material);
-    m.receiveShadow = true;
-    m.userData.shadow = false;
-    seg.group.add(m);
-    // half-buried slabs at the margins hint at the road below
-    for (let s = a + 4; s < b - 4; s += 3 + rng() * 6) {
-      const side = rng() < 0.5 ? -1 : 1;
-      blocks.push({ x: side * (3.3 + rng() * 1.6), y: -0.18, z: -s, sx: 1.2 + rng(), sy: 0.26, sz: 1.0 + rng() * 0.8, color: TILE.weathered.clone().multiplyScalar(0.9 + rng() * 0.2), ry: rng() * 0.6, rx: (rng() - 0.5) * 0.4, rz: (rng() - 0.5) * 0.4 });
+    if (blocks.length) {
+      const im = new THREE.InstancedMesh(P.geo('block'), P.mats.tile, blocks.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+      blocks.forEach((b, i) => {
+        q.setFromEuler(e.set(b.rx, b.ry, b.rz));
+        m4.compose(p.set(b.x, b.y, b.z), q, sc.set(b.sx, b.sy, b.sz));
+        im.setMatrixAt(i, m4);
+        im.setColorAt(i, b.color);
+      });
+      im.instanceMatrix.needsUpdate = true;
+      im.instanceColor.needsUpdate = true;
+      im.computeBoundingSphere();
+      im.receiveShadow = true;
+      im.castShadow = true;
+      im.userData.shadow = false;
+      g.add(im);
+      seg.disposables.push(im);
     }
   }
 
-  // Wind-blown sand banked against a causeway wall. Start (x0, s0) in segment-local
-  // coordinates, running along (ax, as) for len metres and spilling outward along (ox, os).
-  driftStrip(seg, x0, s0, ax, as, ox, os, len) {
-    const n = Math.max(2, Math.ceil(len / 1.4));
-    const J = 7;
-    const pos = new Float32Array((n + 1) * J * 3);
-    const uv = new Float32Array((n + 1) * J * 2);
-    const col = new Float32Array((n + 1) * J * 3);
-    const w = new THREE.Vector3();
-    const noise = this.terrain.noise;
-    const c = new THREE.Color();
-    for (let i = 0; i <= n; i++) {
-      const t = (i / n) * len;
-      const bx = x0 + ax * t, bs = s0 + as * t;
-      this.localToWorld(seg, bx, bs, w);
-      const n1 = noise(w.x * 0.045, w.z * 0.045) * 0.5 + 0.5;
-      const n2 = noise(w.x * 0.11 + 7, w.z * 0.11 - 3) * 0.5 + 0.5;
-      const width = 3.5 + n1 * 4.5;
-      const top = Math.min(-0.5, SAND_BED + 0.5 + n1 * 1.3 + n2 * 0.6);
-      for (let j = 0; j < J; j++) {
-        const u = j / (J - 1);
-        const d = -0.15 + u * width;
-        const x = bx + ox * d, s = bs + os * d;
-        const y = SAND_BED - 0.08 + (top - SAND_BED) * Math.pow(1 - u, 1.7) + Math.sin(d * 2.1 + t * 0.7) * 0.04 * (1 - u);
-        const k = (i * J + j);
-        pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = -s;
-        this.localToWorld(seg, x, s, w);
-        uv[k * 2] = w.x / 6; uv[k * 2 + 1] = w.z / 6;
-        c.copy(DRIFT_TOP).lerp(DRIFT_EDGE, Math.pow(u, 0.8));
-        col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
-      }
-    }
-    const idx = [];
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < J - 1; j++) {
-        const a = i * J + j, b = a + 1, cc = a + J, d = cc + 1;
-        idx.push(a, cc, b, b, cc, d);
-      }
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.setIndex(idx);
-    g.computeVertexNormals();
-    // flip winding where the strip runs "backwards" so faces point up
-    const nrm = g.attributes.normal;
-    if (nrm.getY(0) < 0) {
-      for (let i = 0; i < idx.length; i += 3) { const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp; }
-      g.setIndex(idx);
-      g.computeVertexNormals();
-    }
-    seg.geos.push(g);
-    const m = new THREE.Mesh(g, this.terrain.material);
-    m.receiveShadow = true;
-    m.userData.shadow = false;
-    seg.group.add(m);
-  }
-
-  // Sand banked against the parapets, pebbles on the sand bed.
+  // Pebbles scattered beyond the trail edges.
   dressSand(seg, first) {
     const rng = this.rng;
     const L = seg.length;
     const piles = [];
-    const free = (s) => !this.inGap(seg, s, -2) && !this.inCrossing(seg, s, -3) && (s < L - 13 || s > L + 5);
+    const free = (s) => !this.inGap(seg, s, -2) && (s < L - 13 || s > L + 5);
     for (let s = first ? -55 : 6; s < L - 4; s += 2.5 + rng() * 4) {
       if (!free(s)) continue;
-      if (rng() < 0.4) {
-        const side = rng() < 0.5 ? -1 : 1;
-        const wdt = 0.45 + rng() * 0.6;
-        piles.push([side * (3.62 - wdt * 0.2), -0.04, -s, wdt, 0.07 + rng() * 0.07, 1.2 + rng() * 2.2, (rng() - 0.5) * 0.2]);
-      }
+      rng(); // edge drifts read as flat cut-outs on open sand; kept off (rng call keeps layouts stable)
     }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
     if (piles.length) {
@@ -750,10 +594,12 @@ export class Track {
     const z = seg.zone.id;
     const s0 = first ? -50 : 0;
 
-    for (let s = first ? -36 : 12, k = 0; s < L - 8; s += 24, k++) {
-      if (this.inGap(seg, s, -1.5) || this.inCrossing(seg, s, -3)) continue;
+    // trail lanterns staked in the sand, alternating sides
+    for (let s = first ? -36 : 12, k = 0; s < L - 8; s += 34, k++) {
+      if (this.inGap(seg, s, -1.5)) continue;
       const post = P.makeGlowPost();
-      post.position.set((k % 2 ? 1 : -1) * 3.79, 0.82, -s);
+      post.position.set((k % 2 ? 1 : -1) * 5.2, 0, -s);
+      post.scale.setScalar(1.35);
       post.traverse((o) => { o.userData.shadow = false; });
       seg.group.add(post);
     }
@@ -896,7 +742,13 @@ export class Track {
         gy.wasActive = active;
       }
       for (const a of seg.animated) {
-        if (a.type === 'harvester') a.update(dt);
+        if (a.type === 'devil') {
+          const x = Math.sin(time * a.speed + a.phase) * LANE_W * 1.2;
+          a.mesh.position.x = x;
+          a.mesh.rotation.y += dt * 7;
+          a.col.x0 = x - 0.95;
+          a.col.x1 = x + 0.95;
+        } else if (a.type === 'harvester') a.update(dt);
         else if (a.type === 'thumper') a.head.position.y = 2.4 + Math.abs(Math.sin(time * 4 + a.phase)) * 0.35;
       }
     }

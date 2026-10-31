@@ -65,6 +65,17 @@ export function initProps() {
   mats.shieldPU = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.4, 3.2), wireframe: true });
   mats.trancePU = new THREE.MeshStandardMaterial({ color: '#4a3cff', emissive: new THREE.Color(0.5, 0.3, 2.0), roughness: 0.2, metalness: 0.3 });
   mats.thopterPU = new THREE.MeshStandardMaterial({ vertexColors: true, color: '#ffd27a', emissive: '#5a3500', roughness: 0.3, metalness: 0.9 });
+  mats.hookProp = new THREE.MeshStandardMaterial({ vertexColors: true, color: '#e8c48a', roughness: 0.35, metalness: 0.85 });
+  mats.silencePU = new THREE.MeshStandardMaterial({ color: '#f1e6cc', emissive: new THREE.Color(0.9, 0.82, 0.6), emissiveIntensity: 0.6, roughness: 0.6 });
+  mats.sealPU = new THREE.MeshStandardMaterial({ color: '#2a8c8c', emissive: new THREE.Color(0.1, 1.1, 1.0), emissiveIntensity: 0.7, roughness: 0.3, metalness: 0.4 });
+  mats.rushPU = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 0.9, 0.15) });
+  mats.silenceHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(1.0, 0.92, 0.75), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 });
+  mats.sealHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.2, 1.0, 0.9), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 });
+  mats.rushHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(1.0, 0.4, 0.08), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9 });
+  // sinkhole: unlit, dark at the throat, fading into the sand at the rim (alpha in vertex colours)
+  mats.sinkhole = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  // dust devil: translucent spinning shells of sand
+  mats.devil = new THREE.MeshBasicMaterial({ map: tex.sand.map, color: '#d6ab7c', transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false });
 
   mats.stone = mats.wall;
   mats.stoneDark = mats.wall;
@@ -631,6 +642,29 @@ export function makePowerup(type) {
   } else if (type === 'hooks') {
     core = new THREE.Mesh(cached('puHooks', buildHooks), mats.thopterPU);
     halo = new THREE.Sprite(mats.thopterHalo);
+  } else if (type === 'silence') {
+    // Silent Step: a pair of pale footprints
+    core = new THREE.Mesh(cached('puSilence', () => merge([
+      [new THREE.SphereGeometry(0.16, 12, 8), null, M(-0.13, 0.1, 0, 0, 0, 0.2, 0.75, 1.5, 0.35)],
+      [new THREE.SphereGeometry(0.16, 12, 8), null, M(0.13, -0.1, 0, 0, 0, -0.2, 0.75, 1.5, 0.35)],
+    ])), mats.silencePU);
+    halo = new THREE.Sprite(mats.silenceHalo);
+  } else if (type === 'seal') {
+    // Stillsuit Seal: a banded water capsule
+    core = new THREE.Mesh(cached('puSeal', () => merge([
+      [new THREE.CapsuleGeometry(0.17, 0.4, 4, 12), null, null],
+      [new THREE.TorusGeometry(0.19, 0.035, 6, 20), null, M(0, 0.12, 0, Math.PI / 2, 0, 0)],
+      [new THREE.TorusGeometry(0.19, 0.035, 6, 20), null, M(0, -0.12, 0, Math.PI / 2, 0, 0)],
+    ])), mats.sealPU);
+    halo = new THREE.Sprite(mats.sealHalo);
+  } else if (type === 'rush') {
+    // Spice Rush: a burning spice crystal cluster
+    core = new THREE.Mesh(cached('puRush', () => merge([
+      [new THREE.OctahedronGeometry(0.3, 0), null, M(0, 0.05, 0, 0, 0, 0, 0.7, 1.4, 0.7)],
+      [new THREE.OctahedronGeometry(0.18, 0), null, M(0.22, -0.12, 0.05, 0, 0, 0.5, 0.7, 1.3, 0.7)],
+      [new THREE.OctahedronGeometry(0.16, 0), null, M(-0.2, -0.14, -0.04, 0, 0, -0.5, 0.7, 1.3, 0.7)],
+    ])), mats.rushPU);
+    halo = new THREE.Sprite(mats.rushHalo);
   } else {
     const t = makeOrnithopter(0.16, true);
     core = t.group;
@@ -665,6 +699,69 @@ function buildHooks() {
     parts.push([new THREE.TorusGeometry(0.14, 0.03, 6, 14, Math.PI * 1.3), C.brass, M(sx * 0.31, 0.55, 0, 0, 0, sx > 0 ? -0.2 : Math.PI + 0.2)]);
   }
   return merge(parts);
+}
+
+// a single maker hook as Ishra carries it: a pole with a hooked iron head and a grip wrap
+export function makeHookProp() {
+  return new THREE.Mesh(cached('hookProp', () => merge([
+    [new THREE.CylinderGeometry(0.022, 0.022, 1.25, 8), C.dark, M(0, 0, 0)],
+    [new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), C.rust, M(0, -0.35, 0)],
+    [new THREE.TorusGeometry(0.11, 0.022, 6, 14, Math.PI * 1.35), C.brass, M(0.1, 0.68, 0, 0, 0, -0.3)],
+    [new THREE.ConeGeometry(0.03, 0.12, 6), C.brass, M(0.2, 0.62, 0, 0, 0, Math.PI * 0.9)],
+  ])), mats.hookProp);
+}
+
+// A dust devil: nested spinning shells of sand, narrow at the ground, flaring overhead.
+export function makeDustDevil() {
+  const g = new THREE.Group();
+  const shell = cached('devilShell', () => {
+    const prof = [];
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14;
+      prof.push(new THREE.Vector2(0.35 + Math.pow(t, 1.6) * 2.6 + Math.sin(t * 9) * 0.06, t * 9));
+    }
+    const geo = new THREE.LatheGeometry(prof, 20);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 3, uv.getY(i) * 2);
+    return geo;
+  });
+  for (let k = 0; k < 3; k++) {
+    const m = new THREE.Mesh(shell, mats.devil);
+    m.scale.set(1 - k * 0.22, 1 - k * 0.1, 1 - k * 0.22);
+    m.rotation.y = k * 2.1;
+    m.renderOrder = 3;
+    g.add(m);
+  }
+  const base = new THREE.Sprite(mats.halo);
+  base.material = mats.devilBase || (mats.devilBase = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.85, 0.65, 0.42), transparent: true, depthWrite: false, opacity: 0.55 }));
+  base.scale.set(4, 2.2, 1);
+  base.position.y = 0.8;
+  g.add(base);
+  return g;
+}
+
+// sinkhole disc: radius 1, dark at the centre with spiral streaks, fading out at the rim
+export function makeSinkholeGeometry() {
+  return cached('sinkhole', () => {
+    const geo = new THREE.CircleGeometry(1, 48, 0, Math.PI * 2);
+    geo.rotateX(-Math.PI / 2);
+    // add rings so the gradient has vertices to live on
+    const rings = new THREE.RingGeometry(0.001, 1, 48, 8);
+    rings.rotateX(-Math.PI / 2);
+    const p = rings.attributes.position;
+    const c = new Float32Array(p.count * 4);
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      const r = Math.hypot(x, z), a = Math.atan2(z, x);
+      const spiral = 0.5 + 0.5 * Math.sin(a * 3 + r * 9);
+      const k = Math.pow(r, 1.4) * (0.75 + 0.25 * spiral);
+      c[i * 4] = 0.04 + k * 0.62; c[i * 4 + 1] = 0.025 + k * 0.45; c[i * 4 + 2] = 0.015 + k * 0.28;
+      c[i * 4 + 3] = 1 - Math.pow(Math.max(0, (r - 0.7) / 0.3), 1.5);
+    }
+    rings.setAttribute('color', new THREE.BufferAttribute(c, 4));
+    geo.dispose();
+    return rings;
+  });
 }
 
 /* ================= Vehicles ================= */

@@ -6,6 +6,20 @@ import { photoUniforms } from './materials.js';
 export function attachDevtools(g) {
   const bot = () => {
     const p = g.p, seg = p.seg;
+    // quick-time prompts: answered after a human-ish delay, wrong bot.miss of the time
+    if (p.qte) {
+      const q = p.qte;
+      if (q.t > 0.25) {
+        const want = q.steps[q.idx];
+        const wrong = Math.random() < (bot.miss ?? 0) ? ['left', 'right', 'up', 'down'].find((d) => d !== want) : want;
+        g.onAction(wrong === 'up' ? 'jump' : wrong === 'down' ? 'slide' : wrong);
+      }
+      return;
+    }
+    // corners: commit to the turn a little before the bend
+    if (seg.next && !p.pendingTurn && p.fly <= 0 && p.ride <= 0 && seg.length - p.s < Math.max(6, p.speed * 0.45)) {
+      g.onAction(seg.turn < 0 ? 'left' : 'right');
+    }
     // open sand: break rhythm at irregular intervals, lure the worm when it gets close
     if (p.onSand) {
       bot.next = bot.next ?? 0;
@@ -21,7 +35,7 @@ export function attachDevtools(g) {
     let needJump = false, needSlide = false;
     const blocked = new Set();
     for (const o of seg.obstacles) {
-      if (!o.active && o.kind !== 'geyser') continue;
+      if ((!o.active && o.kind !== 'geyser') || o.fatal) continue;
       const d = o.s0 - p.s;
       if (d < -1.5 || d > look) continue;
       if (o.kind === 'geyser' || (o.y1 > 5 && o.y0 < 1)) {
@@ -47,6 +61,7 @@ export function attachDevtools(g) {
     let n = 0;
     while (g.state === 'running' && g.p.runDist < toDist && n < 60 * 400) {
       bot();
+      if (g.p.qte) g.updateQTE(dt);
       g.time += dt;
       g.updateRun(dt);
       if (g.state !== 'running') break;

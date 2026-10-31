@@ -5,7 +5,7 @@ export const HERO = 'Ishra';
 export const PROLOGUE = [
   'The wells of Sietch Qanat are failing.',
   'Ishra, youngest of the water-carriers, must cross the open erg with the seed-water for a new cache before the storm season seals the desert.',
-  'Keep to the old stone roads. Where the sand has swallowed them, walk without rhythm — or the Maker will hear you.',
+  'The old stone road is gone beneath the sand; only scattered paving survives. Everywhere else, walk without rhythm — or the Maker will hear you.',
 ];
 
 // One chapter per biome visit; lines rotate on later cycles so the journey keeps unfolding.
@@ -62,7 +62,7 @@ export function chapterFor(zoneId, visit) {
 
 // One-time beats the first time something happens in a run.
 export const BEATS = {
-  firstSand: 'The stone road ends. Sand has swallowed it. Break your stride — the Maker hears a steady step.',
+  firstSand: 'Open sand in every direction. Break your stride — the Maker hears a steady step.',
   tooRegular: 'Too even. A pattern is still a rhythm.',
   wormRising: 'Wormsign. Vary your steps — or plant a thumper.',
   thumper: 'The thumper pounds the sand. Far off, the Maker turns toward the false heartbeat.',
@@ -75,6 +75,8 @@ export const BEATS = {
   vision: 'The spice opens the mind. For a heartbeat the path ahead is already walked.',
   shieldSand: 'A shield on open sand drives the Maker to frenzy. Hurry.',
   thopter: 'An ornithopter from Qanat drops low. Grab the skid!',
+  hookNow: 'The Maker rises beneath you — set the hooks!',
+  thrown: 'The Maker rolls and bucks. Ishra is flung back to the sand.',
 };
 
 export const DEATHS = {

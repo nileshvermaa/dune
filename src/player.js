@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { damp } from './noise.js';
 import { limb, lathe, rbox, M, merge, displace } from './geom.js';
+import { makeHookProp } from './props.js';
 
 // Fremen runner: tapered anatomy, ribbed stillsuit, harness and belt kit, hood and mantle with
 // breathing tubes. A gait-cycle animator drives the skeleton; the cloak and scarf tails are
@@ -329,6 +330,44 @@ export class Runner {
     this.clothHead = this.head;
     this.rig = null;
     this.landT = 0;
+    this.hands = this.arms.map((a) => a.hand);
+    this.buildHooks();
+  }
+
+  // maker hooks: crossed on the back while carried, one in each fist while riding
+  buildHooks() {
+    if (this.hooks) for (const h of [this.hooks.back, ...this.hooks.held]) h.parent && h.parent.remove(h);
+    const back = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const h = makeHookProp();
+      h.rotation.z = side * 0.42;
+      h.position.x = side * 0.05;
+      h.castShadow = true;
+      back.add(h);
+    }
+    back.position.set(0, 0.32, 0.22);
+    this.clothTorso.add(back);
+    const held = this.hands.map((hand, i) => {
+      const h = makeHookProp();
+      h.castShadow = true;
+      h.scale.setScalar(this.rig ? 1 / 0.96 : 1);
+      if (this.rig) { h.position.set(0, 0.09, 0); h.rotation.set(0, 0, 0); }
+      else { h.position.set(0, -0.07, 0); h.rotation.set(Math.PI, 0, 0); }
+      hand.add(h);
+      return h;
+    });
+    this.hooks = { back, held, count: -1, riding: null };
+    this.setHooks(0, false);
+  }
+
+  setHooks(count, riding) {
+    const H = this.hooks;
+    if (H.count === count && H.riding === riding) return;
+    H.count = count;
+    H.riding = riding;
+    H.back.visible = count > 0 && !riding;
+    H.back.children[1].visible = count > 0;
+    for (const h of H.held) h.visible = riding;
   }
 
   buildCloak() {
@@ -579,7 +618,7 @@ export class Runner {
 
     /* ---- pose ---- */
     const lateral = clamp(velL.x / 14, -1, 1);
-    if (this.rig) this.animateRig(dt, mode, sp, st.vy || 0, lateral);
+    if (this.rig) this.animateRig(dt, mode, sp, st.vy || 0, lateral, dt > 0 ? dYaw / dt : 0);
     else this.animateProcedural(dt, mode, sp, st.vy || 0, t, lateral);
 
     root.updateMatrixWorld(true);
@@ -649,7 +688,7 @@ export class Runner {
         o.material = o.material.name === 'M_Joints' ? this.suitMats.suitDark : this.suitMats.suit;
       }
     });
-    const need = ['DEF-hips', 'DEF-spine003', 'DEF-neck', 'DEF-head', 'DEF-upper_armL', 'DEF-upper_armR', 'DEF-forearmL', 'DEF-forearmR',
+    const need = ['DEF-hips', 'DEF-spine003', 'DEF-neck', 'DEF-head', 'DEF-upper_armL', 'DEF-upper_armR', 'DEF-forearmL', 'DEF-forearmR', 'DEF-handL', 'DEF-handR',
       'DEF-thighL', 'DEF-shinL', 'DEF-footL', 'DEF-thighR', 'DEF-shinR', 'DEF-footR'];
     if (need.some((n) => !bones[n])) throw new Error('runner rig is missing bones');
     this.rigHolder = new THREE.Group();
@@ -693,15 +732,21 @@ export class Runner {
     const actions = {};
     for (const clip of gltf.animations) actions[clip.name] = mixer.clipAction(clip);
     this.rig = { model, mixer, actions, cur: null, name: '', armsUp: 0, lean: 0 };
+    // hooks move to the skinned body: back proxy and the real hand bones
+    this.hands = [bones['DEF-handL'], bones['DEF-handR']];
+    const prev = this.hooks;
+    this.buildHooks();
+    this.setHooks(prev.count, prev.riding);
     this.landT = 0;
     this.kin.ready = false; // re-seat the cloth on the new frames
   }
 
-  playClip(name, { timeScale = 1, once = false, fade = 0.18 } = {}) {
+  playClip(name, { timeScale = 1, once = false, fade = 0.18, startAt = 0 } = {}) {
     const R = this.rig;
     if (R.name !== name) {
       const next = R.actions[name];
       next.reset();
+      next.time = startAt;
       next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
       next.clampWhenFinished = once;
       next.enabled = true;
@@ -714,17 +759,21 @@ export class Runner {
     R.cur.timeScale = timeScale;
   }
 
-  animateRig(dt, mode, sp, vy, lateral) {
+  animateRig(dt, mode, sp, vy, lateral, yawRate) {
     const R = this.rig;
     this.landT = Math.max(0, this.landT - dt); // set on touchdown in update()
     let arms = 0;
     switch (mode) {
       case 'run':
         if (this.landT > 0) this.playClip('Jump_Land', { timeScale: 2.2, once: true, fade: 0.06 });
-        else this.playClip('Sprint_Loop', { timeScale: clamp(0.95 + (sp - 12) * 0.035, 1, 1.7), fade: 0.14 });
+        else this.playClip('Sprint_Loop', { timeScale: clamp(0.95 + (sp - 12) * 0.035, 1, 2.3), fade: 0.16 });
         break;
       case 'stumble': this.playClip('Hit_Chest', { once: true, fade: 0.08 }); break;
-      case 'jump': this.playClip('Jump_Loop', { timeScale: 1.2, fade: 0.1 }); break;
+      case 'jump':
+        // push off with the take-off clip (skipping its crouch), then the airborne loop
+        if (this.modeT < 0.16) this.playClip('Jump_Start', { timeScale: 2.4, once: true, fade: 0.06, startAt: 0.5 });
+        else this.playClip('Jump_Loop', { timeScale: 1.2, fade: 0.16 });
+        break;
       case 'slide': this.playClip('Roll', { timeScale: 1.47 / 0.8, once: true, fade: 0.08 }); break;
       case 'fly': this.playClip('Jump_Loop', { timeScale: 0.6, fade: 0.25 }); arms = 1; break;
       case 'ride': this.playClip('Crouch_Idle_Loop', { fade: 0.3 }); arms = 0.85; break;
@@ -747,9 +796,22 @@ export class Runner {
     this.headBone.scale.setScalar(0.001);
     this.headFollow.position.copy(this.headBone.position);
     this.headFollow.quaternion.copy(this.headBone.quaternion);
-    // lean into lane changes
-    R.lean = damp(R.lean, mode === 'slide' || mode === 'dead' ? 0 : -lateral * 0.22, 9, dt);
-    this.rigHolder.rotation.z = R.lean;
+    // lean into lane changes and corners; turn the body toward where it is heading
+    const upright = mode === 'slide' || mode === 'dead' || mode === 'ride';
+    R.lean = damp(R.lean, upright ? 0 : clamp(-lateral * 0.24 + yawRate * 0.12, -0.42, 0.42), 9, dt);
+    R.face = damp(R.face || 0, upright ? 0 : -lateral * 0.38, 10, dt);
+    this.rigHolder.rotation.set(0, R.face, R.lean);
+    // lean the spine forward with speed; keep the head level, eyes on the trail ahead
+    const run = mode === 'run' ? clamp((sp - 12) / 30, 0, 1) : mode === 'jump' ? 0.3 : 0;
+    R.fwd = damp(R.fwd || 0, run * 0.22, 6, dt);
+    if (R.fwd > 0.005) {
+      this.root.updateMatrixWorld(true);
+      const right = this._w.set(1, 0, 0).applyQuaternion(this.root.quaternion);
+      this.spineBones = this.spineBones || ['DEF-spine001', 'DEF-spine002'].map((n) => this.rig.model.getObjectByName(n)).filter(Boolean);
+      for (const b of this.spineBones) b.rotateOnWorldAxis(right, -R.fwd * 0.5);
+      this.headFollow.rotateOnWorldAxis(right, R.fwd * 0.9);
+      this.headFollow.rotateOnWorldAxis(this._v.set(0, 0, -1).applyQuaternion(this.root.quaternion), R.lean * 0.6);
+    }
   }
 
   // rotate a bone so its length axis (+y) points along a runner-space direction, blended by w

@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { tex } from './props.js';
 import { smoothstep } from './noise.js';
+import { SAND_BED } from './terrain.js';
+
+// worm heights below were tuned against a sand bed 2.6 m under the old causeway
+const BED = SAND_BED + 2.6;
 
 // Sandworm: one continuous armoured tube swept along a spine (rebuilt every frame), and a head
 // whose three thick petals close into a blunt prow and open on rows of teeth and a glowing
@@ -294,9 +298,9 @@ export class ChaserWorm {
       const d = headDist - i * m.segLen;
       this.track.sample(d, this.side * (this.offset + Math.sin(this.time * 0.8 + i * 0.2) * 1.2), pts[i]);
       const wave = Math.sin(this.time * 3.2 - i * 0.42);
-      pts[i].y = -3.6 + close * 1.3 + wave * 1.8 - sink - Math.max(0, i - 24) * 0.25;
+      pts[i].y = BED - 3.6 + close * 1.3 + wave * 1.8 - sink - Math.max(0, i - 24) * 0.25;
     }
-    pts[0].y = -1.0 + close * 3.4 + Math.sin(this.time * 3.2) * 0.6 - sink;
+    pts[0].y = BED - 1.0 + close * 3.4 + Math.sin(this.time * 3.2) * 0.6 - sink;
     this._dir.subVectors(pts[0], pts[2]).normalize();
     this._dir.y += 0.15 + close * 0.35;
     this._dir.normalize();
@@ -316,7 +320,7 @@ ChaserWorm.prototype.ride = function ride(dt, headDist, offset) {
   for (let i = 0; i <= m.count; i++) {
     const d = headDist - i * m.segLen;
     this.track.sample(d, offset + Math.sin(this.time * 0.9 + i * 0.22) * 0.5 * (i / m.count), pts[i]);
-    pts[i].y = -1.25 + Math.sin(this.time * 2.4 - i * 0.35) * 0.3 - Math.max(0, i - 18) * 0.4;
+    pts[i].y = BED - 1.25 + Math.sin(this.time * 2.4 - i * 0.35) * 0.3 - Math.max(0, i - 18) * 0.4;
   }
   pts[0].y += 0.9;
   this._dir.subVectors(pts[0], pts[2]).normalize();

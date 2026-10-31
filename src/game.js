@@ -218,6 +218,7 @@ export class Game {
       toasts: $('toasts'), title: $('title'), pause: $('pause'), over: $('over'), tint: $('tint'), flash: $('flash'),
       narration: $('narration'), waterBar: $('water-bar'), visionFill: $('vision-fill'),
       thumpers: $('inv-thumper-count'), invThumper: $('inv-thumper'), invHooks: $('inv-hooks'), thumperBtn: $('thumper-btn'),
+      qte: $('qte'), qteRing: $('qte-ring'), qteKey: $('qte-key'), qteLabel: $('qte-label'), qteDots: $('qte-dots'),
       thumperBtnCount: $('thumper-btn-count'), hudChapter: $('hud-chapter'), waterPct: $('water-pct'), visionBar: $('vision-bar'),
       wormPct: $('worm-pct'), danger: $('danger'), stride: $('stride'), strideBars: $('stride-bars'), strideStatus: $('stride-status'),
     });
@@ -415,6 +416,7 @@ export class Game {
       water: 100, sign: 0, thumpers: 1, hooks: 0, vision: 0, ride: 0, rideOff: 0, lure: 0,
       lastBreak: -10, lastGap: 0, onSand: false, chapter: 0, visits: {}, beats: {},
       strides: [], rides: 0, journal: [],
+      silent: 0, seal: 0, rush: 0, qte: null, balanceT: 0, turnWarned: false,
     };
     for (const t of this.planted || []) this.scene.remove(t.group);
     this.planted = [];
@@ -492,10 +494,19 @@ export class Game {
     if (st !== 'running') return;
     const p = this.p;
     if (a === 'pause') return this.pause();
+    if (p.qte) return this.qteInput(a);
     if (a === 'thumper') return this.plantThumper();
     if (p.ride > 0) return;
     if (a === 'left' || a === 'right') {
       const dir = a === 'left' ? -1 : 1;
+      // approaching a corner, a press toward the bend is the turn (Temple Run style)
+      const seg = p.seg;
+      if (seg.next && !p.pendingTurn && dir === seg.turn && p.fly <= 0 && this.inTurnWindow()) {
+        p.pendingTurn = dir;
+        this.audio.whoosh(500, 1500, 0.18, 0.12);
+        this.rhythmBreak();
+        return;
+      }
       const nl = clamp(p.lane + dir, -1, 1);
       if (nl !== p.lane) { p.lane = nl; this.audio.whoosh(600, 1200, 0.12, 0.1); this.rhythmBreak(); }
     } else if (a === 'jump' || a === 'tap') {
@@ -517,6 +528,89 @@ export class Game {
         p.slideQueued = true;
       }
     }
+  }
+
+  // the stretch before a corner where a press toward the bend counts as the turn
+  inTurnWindow() {
+    const p = this.p;
+    const d = p.seg.length - p.s;
+    return d < Math.max(15, p.speed * 0.95) && d > -DECK_HALF;
+  }
+
+  /* ---------- hooking the Maker: a quick-time sequence when the worm strikes ---------- */
+
+  // how hard the Maker is to hook and hold: rises with distance and with every ride
+  rideDifficulty() {
+    const p = this.p;
+    return clamp(p.runDist / 9000 + p.rides * 0.12, 0, 1);
+  }
+
+  startQTE(kind) {
+    const p = this.p;
+    const d = this.rideDifficulty();
+    const n = kind === 'hook' ? 1 + Math.round(d * 3) : 1;
+    const dirs = ['left', 'right', 'up', 'down'];
+    const steps = Array.from({ length: n }, () => dirs[Math.floor(Math.random() * 4)]);
+    const window = kind === 'hook' ? 1.35 - d * 0.65 : 1.1 - d * 0.45;
+    p.qte = { kind, steps, idx: 0, t: 0, window, slow: kind === 'hook' ? 0.12 : 0.45 };
+    this.renderQTE();
+    this.ui.qte.classList.remove('hidden');
+    if (kind === 'hook') {
+      this.audio.braam(1);
+      this.shake = 0.8;
+      this.cinema(true);
+      this.narrate(BEATS.hookNow, 2600);
+    }
+  }
+
+  qteInput(a) {
+    const p = this.p, q = p.qte;
+    const dir = a === 'jump' || a === 'tap' ? 'up' : a === 'slide' ? 'down' : a;
+    if (!['left', 'right', 'up', 'down'].includes(dir)) return;
+    if (dir !== q.steps[q.idx]) return this.endQTE(false);
+    this.audio.pickup(q.idx + 2);
+    q.idx++;
+    q.t = 0;
+    this.flash('#ffd29a', 0.18);
+    if (q.idx >= q.steps.length) return this.endQTE(true);
+    this.renderQTE();
+  }
+
+  updateQTE(realDt) {
+    const q = this.p.qte;
+    q.t += realDt;
+    const left = 1 - q.t / q.window;
+    this.ui.qteRing.style.transform = `scale(${0.55 + Math.max(0, left) * 1.25})`;
+    this.ui.qteRing.classList.toggle('late', left < 0.3);
+    if (left <= 0) this.endQTE(false);
+  }
+
+  renderQTE() {
+    const q = this.p.qte;
+    const glyph = { left: '←', right: '→', up: '↑', down: '↓' };
+    this.ui.qteKey.textContent = glyph[q.steps[q.idx]];
+    this.ui.qteLabel.textContent = q.kind === 'hook' ? 'Set the hooks' : 'Hold on';
+    this.ui.qteDots.innerHTML = q.steps.map((_, i) => `<i class="${i < q.idx ? 'done' : i === q.idx ? 'now' : ''}"></i>`).join('');
+  }
+
+  endQTE(ok) {
+    const p = this.p, q = p.qte;
+    p.qte = null;
+    this.ui.qte.classList.add('hidden');
+    if (q.kind === 'hook') {
+      this.cinema(false);
+      if (ok) this.startRide();
+      else this.die('worm');
+      return;
+    }
+    // balance check while riding: fail and the Maker shakes you off
+    if (ok) { p.balanceT = 4.5 - this.rideDifficulty() * 1.8; return; }
+    p.ride = 0;
+    p.invuln = 1.8;
+    p.water = Math.max(0, p.water - 15);
+    this.stumble();
+    this.beat('thrown', true);
+    this.audio.roar();
   }
 
   // "Walk without rhythm": on open sand, irregular moves quiet your footsteps —
@@ -569,8 +663,10 @@ export class Game {
   startRide() {
     const p = this.p;
     p.hooks--;
+    // rides grow shorter and the Maker fights harder the further you go
+    p.ride = RIDE_TIME * (1 - this.rideDifficulty() * 0.45);
+    p.balanceT = 3.2;
     p.rides++;
-    p.ride = RIDE_TIME;
     p.sign = 0;
     p.slideT = 0;
     p.vy = 0;
@@ -677,6 +773,7 @@ export class Game {
     p.prevS = p.s;
     p.laneX = pos.dot(next.right);
     p.prevLaneX = p.laneX;
+    p.laneV = 0;
     p.seg = next;
     p.pendingTurn = 0;
     this.audio.turn();
@@ -689,7 +786,7 @@ export class Game {
     const gdt = dt * (p.trance > 0 ? 0.8 : 1);
     p.prevLaneX = p.laneX;
     p.prevS = p.s;
-    p.speed = speedAt(p.runDist) * (p.stumbleT > 0 ? 0.82 : 1) * (p.fly > 0 ? 1.2 : 1) * (p.ride > 0 ? 1.45 : 1);
+    p.speed = speedAt(p.runDist) * (p.stumbleT > 0 ? 0.82 : 1) * (p.fly > 0 ? 1.2 : 1) * (p.ride > 0 ? 1.45 : 1) * (p.rush > 0 ? 1.25 : 1);
     const ds = p.speed * gdt;
     p.s += ds;
     p.runDist += ds;
@@ -698,6 +795,9 @@ export class Game {
     p.invuln = Math.max(0, p.invuln - dt);
     p.stumbleT = Math.max(0, p.stumbleT - dt);
     p.lure = Math.max(0, p.lure - dt);
+    p.silent = Math.max(0, p.silent - dt);
+    p.seal = Math.max(0, p.seal - dt);
+    p.rush = Math.max(0, p.rush - dt);
     if (p.fly > 0) {
       p.fly -= dt;
       if (p.fly <= 0 && this.track.inGap(p.seg, p.s + 6, -2)) p.fly = 0.3;
@@ -707,21 +807,32 @@ export class Game {
       p.ride -= dt;
       if (p.ride <= 0 && this.track.inGap(p.seg, p.s + 10, -2)) p.ride = 0.4;
       if (p.ride <= 0) { p.ride = 0; p.invuln = 1.8; this.beat('rideEnd', true); this.audio.roar(); }
+      // the Maker tries to shake its rider loose
+      else if (!p.qte) {
+        p.balanceT -= dt;
+        if (p.balanceT <= 0) this.startQTE('balance');
+      }
     }
     p.rideOff = damp(p.rideOff, p.ride > 0 ? RIDE_OFFSET : 0, p.ride > 0 ? 1.6 : 3.2, dt);
 
     let seg = p.seg;
-    // The road bends on its own; corners carry the runner round. Each lane turns where it lines
-    // up with the same lane of the next stretch, so the runner keeps the lane they chose.
+    // Corners must be turned by hand (a press toward the bend before it); riding the worm or
+    // hanging from a thopter, you are carried round. Each lane turns where it lines up with the
+    // same lane of the next stretch. Miss the turn and the rock face ahead is waiting.
     if (seg.next) {
       const k = seg.fwd.dot(seg.next.right); // -1 right turn, +1 left turn
-      if (p.s >= seg.length + p.lane * LANE_W * k) {
+      const carried = p.ride > 0 || Math.abs(p.rideOff) > 0.6 || p.fly > 0;
+      if ((p.pendingTurn || carried) && p.s >= seg.length + p.lane * LANE_W * k) {
         this.executeTurn();
         seg = p.seg;
       }
     }
 
-    p.laneX = damp(p.laneX, p.lane * LANE_W, 15, gdt);
+    // lane changes ride a critically damped spring: they ease in and settle, no snapping
+    const LK = 230, LC = 2 * Math.sqrt(LK);
+    const lv = p.laneV || 0;
+    p.laneV = lv + ((p.lane * LANE_W - p.laneX) * LK - lv * LC) * gdt;
+    p.laneX += p.laneV * gdt;
 
     const riding = p.ride > 0 || Math.abs(p.rideOff) > 0.6;
     if (p.fly > 0) {
@@ -736,7 +847,10 @@ export class Game {
     } else {
       p.vy -= GRAVITY * gdt;
       p.y += p.vy * gdt;
-      const support = !this.track.inGap(seg, p.s, 0.3);
+      // mid-hook the Maker is all that matters: no falling, no stumbling
+      const hooking = p.qte && p.qte.kind === 'hook';
+      if (hooking) p.invuln = Math.max(p.invuln, 0.3);
+      const support = hooking || !this.track.inGap(seg, p.s, 0.3);
       if (p.y <= 0 && support && p.y > -0.7) {
         if (!p.grounded && p.vy < -5) {
           this.audio.land(this.p.onSand ? 'sand' : 'stone');
@@ -754,30 +868,32 @@ export class Game {
     if (p.slideT > 0) p.slideT -= gdt;
 
     // water: the stillsuit loses a little every moment, more under the sun
-    const drain = (0.85 + 0.7 * (1 - this.sky.night) + this.atmo.haze * 0.5) * (riding || p.fly > 0 ? 0.4 : 1);
+    const drain = (0.85 + 0.7 * (1 - this.sky.night) + this.atmo.haze * 0.5) * (riding || p.fly > 0 ? 0.4 : 1) * (p.seal > 0 ? 0 : 1);
     p.water = Math.max(0, p.water - drain * dt);
     if (p.water < 25) this.beat('lowWater');
     if (p.water <= 0) return this.die('thirst');
 
     // wormsign: steady footsteps on open sand call the Maker
-    p.onSand = this.track.inCrossing(seg, p.s) && !riding && p.fly <= 0;
+    // the whole desert is open sand now; only the old paving is safe
+    p.onSand = !this.track.onRock(seg, p.s) && !riding && p.fly <= 0;
     if (p.onSand) {
       this.beat('firstSand');
       if (p.shield) this.beat('shieldSand');
-      let rate = (22 + p.speed * 0.5) * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1);
-      if (p.lure > 0) rate = 0;
+      const ease = Math.min(1, 0.45 + p.runDist / 600); // gentle for the first stretch
+      let rate = (9 + p.speed * 0.28) * ease * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1);
+      if (p.lure > 0 || p.silent > 0) rate = 0;
       p.sign = Math.min(100, p.sign + rate * gdt);
       if (p.sign > 60 && !p.beats.wormRising) this.audio.braam(0.7);
       if (p.sign > 60) this.beat('wormRising');
-      if (p.sign >= 100) {
-        if (p.hooks > 0) this.startRide();
+      if (p.sign >= 100 && !p.qte) {
+        if (p.hooks > 0) this.startQTE('hook');
         else return this.die('worm');
       }
-    } else {
+    } else if (!p.qte) {
       p.sign = Math.max(0, p.sign - 35 * gdt);
     }
 
-    if (p.invuln <= 0 && p.fly <= 0 && !riding) this.collide(seg);
+    if (p.fly <= 0 && !riding) this.collide(seg); // invulnerability is handled per obstacle (the rock face still kills)
     if (this.state !== 'running') return;
     this.pickups(seg, dt);
 
@@ -827,11 +943,17 @@ export class Game {
     const h = p.slideT > 0 ? 0.8 : 1.75;
     const px0 = p.laneX - 0.35, px1 = p.laneX + 0.35;
     const qx0 = p.prevLaneX - 0.35, qx1 = p.prevLaneX + 0.35;
+    // swept along the path between frames, so nothing is tunnelled through at high speed
+    const sA = Math.min(p.prevS, p.s) - 0.35, sB = Math.max(p.prevS, p.s) + 0.35;
     for (const o of seg.obstacles) {
       if (!o.active) continue;
-      if (p.s + 0.35 < o.s0 || p.s - 0.35 > o.s1) continue;
+      if (sB < o.s0 || sA > o.s1) continue;
       if (p.y + h <= o.y0 || p.y >= o.y1) continue;
       if (px1 <= o.x0 || px0 >= o.x1) continue;
+      if (o.fatal) { this.flash('#ffffff', 0.6); return this.die('crash'); }
+      if (p.invuln > 0) continue;
+      if (p.rush > 0) { this.smash(o, seg); continue; }
+      if (o.kind === 'devil') { this.devilHit(o); return; }
       const wasX = !(qx1 <= o.x0 || qx0 >= o.x1);
       if (!wasX) {
         const dir = Math.sign(p.laneX - p.prevLaneX) || 1;
@@ -843,6 +965,32 @@ export class Game {
       }
       return;
     }
+  }
+
+  // Spice Rush: obstacles burst apart before the runner
+  smash(o, seg) {
+    o.active = false;
+    o.mesh.visible = false;
+    const w = this.track.localToWorld(seg, (o.x0 + o.x1) / 2, (o.s0 + o.s1) / 2, this.v.b);
+    w.y += 1;
+    this.dustPool.emit(w, { count: 45, spread: [1.2, 1, 1.2], vel: [0, 4, 0], velSpread: 7, life: 1.2, size: 1.2, grow: 1.5, color: this.colors.sand, gravity: -7, alpha: 0.8 });
+    this.glowPool.emit(w, { count: 20, spread: [0.6, 0.6, 0.6], vel: [0, 3, 0], velSpread: 6, life: 0.6, size: 0.4, color: this.colors.spice, gravity: 0, drag: 2 });
+    this.audio.crash();
+    this.shake = Math.max(this.shake, 0.4);
+    this.p.score += 50 * this.p.mult;
+  }
+
+  // a dust devil: blinding sand, a lurch sideways, and footsteps the Maker cannot miss
+  devilHit(o) {
+    const p = this.p;
+    p.invuln = 0.9;
+    p.sign = Math.min(100, p.sign + 28);
+    p.water = Math.max(0, p.water - 8);
+    const mid = (o.x0 + o.x1) / 2;
+    p.lane = clamp(p.lane + (p.laneX >= mid ? 1 : -1), -1, 1);
+    this.stumble();
+    this.flash('#d9a066', 0.45);
+    this.dustPool.emit(this.v.b.copy(this.playerPos).addScaledVector(UP, 1.2), { count: 50, spread: [1.5, 1.2, 1.5], vel: [0, 3, 0], velSpread: 6, life: 1.4, size: 1.6, grow: 2, color: this.colors.sand, gravity: -1, drag: 1, alpha: 0.7 });
   }
 
   stumble() {
@@ -954,6 +1102,16 @@ export class Game {
     } else if (k.type === 'trance') {
       p.trance = TRANCE_TIME;
       this.toast('Spice trance — time bends, spice flows to you');
+    } else if (k.type === 'silence') {
+      p.silent = 10;
+      this.toast('Silent Step — the sand forgets your footsteps');
+    } else if (k.type === 'seal') {
+      p.seal = 15;
+      this.toast('Stillsuit sealed — not a drop lost');
+    } else if (k.type === 'rush') {
+      p.rush = 5;
+      this.flash('#ff8a2a', 0.35);
+      this.toast('Spice Rush — nothing stands in your way');
     } else if (k.type === 'thopter') {
       p.fly = THOPTER_TIME;
       p.slideT = 0;
@@ -965,27 +1123,34 @@ export class Game {
   tips(seg) {
     const p = this.p;
     const ui = this.ui;
-    ui.turnHint.classList.add('hidden');
+    // the turn arrow: shown for every corner until the turn is committed
+    const turning = seg.next && !p.pendingTurn && p.fly <= 0 && p.ride <= 0 && p.seg.length - p.s < Math.max(30, p.speed * 1.6);
+    ui.turnHint.classList.toggle('hidden', !turning);
+    if (turning) ui.turnHint.classList.toggle('left', seg.turn < 0);
     let tip = null;
-    if (this.tutorial && p.fly <= 0 && p.ride <= 0) {
-      const sandAhead = (seg.crossings || []).find(([a]) => a - p.s > 0 && a - p.s < 30);
-      if (p.onSand) {
-        if (p.sign > 65 && p.thumpers > 0) tip = isTouch ? 'Tap THUMPER to lure the worm' : 'E — plant a thumper';
-        else tip = isTouch ? 'Swipe unevenly — break your rhythm' : 'Jump · slide · weave — unevenly';
-      } else if (sandAhead) {
-        tip = 'Open sand ahead — walk without rhythm';
+    if (turning && this.inTurnWindow()) {
+      tip = isTouch ? `Swipe ${seg.turn < 0 ? 'left' : 'right'} to turn` : `${seg.turn < 0 ? '←' : '→'} Turn`;
+    } else if (this.tutorial && p.fly <= 0 && p.ride <= 0) {
+      const rockAhead = (seg.rocks || []).find(([a]) => a - p.s > 0 && a - p.s < 30);
+      if (p.onSand && p.sign > 65 && p.thumpers > 0) {
+        tip = isTouch ? 'Tap THUMPER to lure the worm' : 'E — plant a thumper';
+      } else if (rockAhead && p.sign > 30) {
+        tip = 'Stone ahead — the Maker cannot follow';
+      } else if (p.onSand && p.sign > 35) {
+        tip = isTouch ? 'Swipe unevenly — break your rhythm' : 'Jump · slide · weave — unevenly';
       } else {
         for (const o of seg.obstacles) {
           const d = o.s0 - p.s;
-          if (d < 0 || d > 28 || !o.active) continue;
+          if (d < 0 || d > 28 || !o.active || o.fatal) continue;
           if (o.y0 > 1) tip = isTouch ? 'Swipe down to slide' : '↓ Slide';
           else if (o.y1 < 2) tip = isTouch ? 'Swipe up to jump' : '↑ Jump';
           else tip = isTouch ? 'Swipe to dodge' : '← → Dodge';
           break;
         }
-        if (!tip) for (const [a] of seg.gaps) if (a - p.s > 0 && a - p.s < 28) { tip = isTouch ? 'Swipe up to leap' : '↑ Leap the gap'; break; }
+        if (!tip) for (const [a] of seg.gaps) if (a - p.s > 0 && a - p.s < 28) { tip = isTouch ? 'Swipe up to leap' : '↑ Leap the sinkhole'; break; }
       }
     }
+    if (p.qte) tip = null; // the prompt has the stage
     if (tip) {
       ui.tip.classList.remove('hidden');
       this.setText('tip', ui.tip, tip);
@@ -1021,14 +1186,14 @@ export class Game {
     const t = this.deathT;
     if (this.deathCause === 'fall' || this.deathCause === 'edge') {
       p.vy -= GRAVITY * dt;
-      p.y = Math.max(SAND_BED + 0.2, p.y + p.vy * dt);
+      p.y = Math.max(SAND_BED - 2.4, p.y + p.vy * dt); // down the throat of the sinkhole
       if (this.deathCause === 'edge') p.s += Math.max(0, 8 - t * 10) * dt;
     } else {
       p.s += Math.max(0, p.speed * (0.25 - t)) * dt;
     }
     if (t > 0.55 && !this.devour.active) {
       const base = this.v.a.copy(this.playerPos);
-      base.y = this.deathCause === 'fall' || this.deathCause === 'edge' ? SAND_BED : 0;
+      base.y = this.deathCause === 'fall' || this.deathCause === 'edge' ? SAND_BED - 1.5 : 0;
       this.devour.start(base, this.deathFwd);
       this.audio.roar();
       this.shake = 1.2;
@@ -1101,6 +1266,7 @@ export class Game {
       mode = p.ride > 0 ? 'ride' : p.fly > 0 ? 'fly' : p.slideT > 0 ? 'slide' : !p.grounded ? 'jump' : p.stumbleT > 0 ? 'stumble' : 'run';
     } else if (this.state === 'dying' || this.state === 'over') mode = 'dead';
     else if (this.state === 'paused') mode = 'none';
+    this.runner.setHooks(p.hooks, p.ride > 0);
     if (mode !== 'none') this.runner.update(dt, { speed: p.speed, mode, vy: p.vy });
 
     const b = this.blob;
@@ -1357,6 +1523,9 @@ export class Game {
     if (p.ride > 0) pu.push(['Sandrider', '#ffb35c', p.ride / RIDE_TIME]);
     if (p.lure > 0) pu.push(['Thumper', '#ff8a2a', p.lure / 7]);
     if (p.fly > 0) pu.push(['Thopter', '#ffc54a', p.fly / THOPTER_TIME]);
+    if (p.silent > 0) pu.push(['Silent Step', '#f1e6cc', p.silent / 10]);
+    if (p.seal > 0) pu.push(['Sealed', '#5fe0d0', p.seal / 15]);
+    if (p.rush > 0) pu.push(['Spice Rush', '#ff8a2a', p.rush / 5]);
     const key = pu.map((x) => x[0] + Math.round(x[2] * 30)).join();
     if (key !== ui.last.pu) {
       ui.last.pu = key;
@@ -1377,6 +1546,11 @@ export class Game {
     if (!(dt > 0)) dt = 0.016;
     this.governPerformance(dt);
     dt = Math.min(dt, 0.05);
+    // a quick-time prompt runs in real time while the world slows around it
+    if (this.state === 'running' && this.p.qte) {
+      this.updateQTE(dt);
+      if (this.p.qte) dt *= this.p.qte.slow;
+    }
     const st = this.state;
     if (st !== 'paused') this.time += dt;
     updatePhotoTextures(dt);

@@ -4,30 +4,35 @@ An endless desert journey in the browser, inspired by the world of *Dune*.
 
 The wells of Sietch Qanat are failing. Ishra, youngest of the water-carriers, must carry
 the seed-water for a new cache across the deep desert before the storm season seals it.
-The journey unfolds in chapters as the old stone road winds through five biomes, under a full
-day/night cycle.
+The journey unfolds in chapters across open desert through five biomes, under a full
+day/night cycle. The run never stops getting faster.
 
-Everything — terrain, models, textures, music and sound — is generated procedurally at
-runtime with Three.js, so the build ships as one small static bundle with no assets.
+Terrain, models and music are generated procedurally at runtime with Three.js; a few CC0
+photo textures and a CC0 animation set are credited in `public/textures` and `public/models`.
 
 ## How to survive
 
-- **Stone is safe.** The Maker cannot follow onto rock. On the old causeway, dodge, jump and
-  slide past ruins, spice pipes and spice blows.
-- **Walk without rhythm.** Where dunes have buried the road, every steady step on open sand
-  raises *wormsign*. Break your stride — jump, slide, weave — but unevenly: a regular pattern
-  is still a rhythm, and the Maker hears it. At full wormsign, the worm takes you.
-- **Guard your water.** Your stillsuit loses water every moment (more under the sun). Crashing
-  into the stones costs water rather than ending the run outright. Drink dew along the way and
-  the water caches at every bend in the road.
-- **Thumpers** draw the worm away for a few seconds.
-- **Maker hooks** turn a worm strike into a ride: Ishra mounts the worm and rides the desert.
-- **Spice** fills your prescience; when it peaks, time slows and spice flows to you.
-- **Holtzman shields** absorb one impact — but on open sand they drive the worm to frenzy.
+- **Walk without rhythm.** The whole desert is open sand: every steady step raises *wormsign*.
+  Break your stride — jump, slide, weave — but unevenly: a regular pattern is still a rhythm,
+  and the Maker hears it. At full wormsign, the worm takes you.
+- **Stone is safe.** Only scattered stretches of the old paving survive. The Maker cannot follow
+  onto them, and wormsign drains while you cross.
+- **Turn at the bends.** Swipe or press toward the bend before every corner. Miss it and you run
+  into the rock face.
+- **Dodge.** Rock spires, tumbled walls (jump, or run through the breach), standing slabs that
+  block two lanes, arches to slide under, sinkholes to leap, and dust devils sweeping across.
+- **Guard your water.** Your stillsuit loses water every moment (more under the sun); crashes
+  cost water. Drink dew along the way and the caches at every bend.
+- **Maker hooks** let you ride the worm — if you can set them. When it strikes, time slows:
+  hit the prompted directions inside the closing ring. While riding, hold on through the balance
+  checks. Both get harder the further you go.
+- **Powerups:** thumpers lure the worm away; Holtzman shields absorb a hit (but enrage the worm on
+  sand); Silent Step stops wormsign; Stillsuit Seal stops water loss; Spice Rush smashes through
+  obstacles; ornithopters lift you clear; spice fills prescience.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Weave between lanes | ← → or A D | Swipe left / right |
+| Weave between lanes / turn at a bend | ← → or A D | Swipe left / right |
 | Jump | ↑, W or Space | Swipe up or tap |
 | Slide (fast-drop in mid-air) | ↓ or S | Swipe down |
 | Plant a thumper | E, Q or Shift | Thumper button |

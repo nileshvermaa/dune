@@ -4,18 +4,19 @@ import { tex, makeRock, makeWormSkeleton, makeStoneCircle, makeSietch } from './
 import { detailed } from './materials.js';
 
 // Infinite dune field streamed in chunks around the player.
-// Dunes flatten into a sand bed along the causeway so the track always reads clearly.
+// Dunes flatten into a packed-sand trail along the path so it always reads clearly.
 
 export const CHUNK = 96;
 const RES = 48;
 const N = RES + 1;
 const P = N + 2;
 const STEP = CHUNK / RES;
-export const SAND_BED = -2.6;
+// The trail Ishra runs on: packed sand at y = 0, dunes rising away from it.
+export const SAND_BED = 0;
 
 const C_TROUGH = new THREE.Color('#b47643');
 const C_CREST = new THREE.Color('#f2cd94');
-const C_BED = new THREE.Color('#a8774c');
+const C_BED = new THREE.Color('#bd8b5c');
 const C_RUST = new THREE.Color('#b0603a');
 const C_PALE = new THREE.Color('#f3dcb4');
 
@@ -60,7 +61,8 @@ export class Terrain {
 
   heightWithDist(x, z, d) {
     const f = smoothstep(9, 62, d);
-    const base = SAND_BED + this.noise(x * 0.07, z * 0.07) * 0.25;
+    // nearly flat underfoot (the runner stays at y = 0), gently rippled further out
+    const base = SAND_BED + this.noise(x * 0.07, z * 0.07) * (0.03 + 0.22 * smoothstep(5, 16, d));
     if (f <= 0) return base;
     return base + (this.rawHeight(x, z) - base) * f;
   }
