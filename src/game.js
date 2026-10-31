@@ -19,6 +19,8 @@ import { ZONES, zoneAt, distToZone } from './zones.js';
 import { PROLOGUE, BEATS, DEATHS, chapterFor, roman, saying } from './story.js';
 import { makeThumper } from './props.js';
 
+const ZONE_LABELS = ['Erg', 'Wall', 'Sietch', 'Spice', 'Storm'];
+
 const GRAVITY = 40;
 const JUMP_V = 13.2;
 const SLIDE_TIME = 0.8;
@@ -168,13 +170,19 @@ export class Game {
       wormMeter: $('worm-meter'), wormFill: $('worm-fill'), powerups: $('powerups'),
       turnHint: $('turn-hint'), tip: $('tip'), zoneBanner: $('zone-banner'), zoneText: $('zone-text'),
       toasts: $('toasts'), title: $('title'), pause: $('pause'), over: $('over'), tint: $('tint'), flash: $('flash'),
-      narration: $('narration'), waterBar: $('water-bar'), waterFill: $('water-fill'), visionFill: $('vision-fill'),
+      narration: $('narration'), waterBar: $('water-bar'), visionFill: $('vision-fill'),
       thumpers: $('inv-thumper-count'), invThumper: $('inv-thumper'), invHooks: $('inv-hooks'), thumperBtn: $('thumper-btn'),
+      thumperBtnCount: $('thumper-btn-count'), hudChapter: $('hud-chapter'), waterPct: $('water-pct'), visionBar: $('vision-bar'),
+      wormPct: $('worm-pct'), danger: $('danger'), stride: $('stride'), strideBars: $('stride-bars'), strideStatus: $('stride-status'),
     });
+    ui.waterSegs = Array.from({ length: 10 }, () => $('water-segs').appendChild(document.createElement('i')));
+    ui.strideEls = Array.from({ length: 8 }, () => ui.strideBars.appendChild(document.createElement('i')));
+    $('journey-labels').innerHTML = ZONE_LABELS.map((l, i) => `<span>${roman(i + 1)} · ${l}</span>`).join('');
     ui.thumperBtn.addEventListener('click', (e) => { e.stopPropagation(); this.onAction('thumper'); });
     ui.thumperBtn.addEventListener('touchend', (e) => e.stopPropagation());
     $('title-saying').textContent = `“${saying()}”`;
     $('play-btn').addEventListener('click', () => this.start());
+    $('play-btn-m').addEventListener('click', () => this.start());
     $('again-btn').addEventListener('click', () => this.start());
     $('menu-btn').addEventListener('click', () => this.toTitle());
     $('resume-btn').addEventListener('click', () => this.resume());
@@ -188,7 +196,7 @@ export class Game {
       this.applyQuality(true);
     });
     const sb = $('sound-btn');
-    const syncSound = () => { sb.textContent = `Sound: ${this.audio.enabled ? 'On' : 'Off'}`; };
+    const syncSound = () => { sb.textContent = `Sound · ${this.audio.enabled ? 'On' : 'Off'}`; };
     sb.addEventListener('click', () => { this.audio.init(); this.audio.setEnabled(!this.audio.enabled); syncSound(); });
     syncSound();
     this.refreshTitle();
@@ -197,14 +205,7 @@ export class Game {
 
   refreshTitle() {
     $('best-title').textContent = Math.floor(this.save.best).toLocaleString();
-    const list = $('runs-list');
-    list.innerHTML = '';
-    for (const r of (this.save.runs || []).slice(0, 5)) {
-      const li = document.createElement('li');
-      li.textContent = `${Math.floor(r.score).toLocaleString()} · ${Math.floor(r.dist)}m`;
-      list.appendChild(li);
-    }
-    $('quality-btn').textContent = `Quality: ${this.quality === 'low' ? 'Low' : 'High'}`;
+    $('quality-btn').textContent = `Quality · ${this.quality === 'low' ? 'Low' : 'High'}`;
   }
 
   setText(key, el, value) {
@@ -266,7 +267,7 @@ export class Game {
       });
       this.resize();
     }
-    $('quality-btn').textContent = `Quality: ${high ? 'High' : 'Low'}`;
+    $('quality-btn').textContent = `Quality · ${high ? 'High' : 'Low'}`;
     this.app.classList.toggle('css-grade', !high);
   }
 
@@ -304,6 +305,7 @@ export class Game {
       zoneIndex: 0, milestone: 0, spiceMilestone: 0, tips: 0, tipFor: null, visualYaw: 0, alive: true,
       water: 100, sign: 0, thumpers: 1, hooks: 0, vision: 0, ride: 0, rideOff: 0, lure: 0,
       lastBreak: -10, lastGap: 0, onSand: false, chapter: 0, visits: {}, beats: {},
+      strides: [], rides: 0, journal: [],
     };
     for (const t of this.planted || []) this.scene.remove(t.group);
     this.planted = [];
@@ -332,12 +334,14 @@ export class Game {
     this.cinema(true, 9000);
     this.audio.braam(0.8);
     this.syncInventory();
+    this.drawStride();
     this.thopter.group.visible = false;
   }
 
   pause() {
     if (this.state !== 'running') return;
     this.state = 'paused';
+    this.renderJournal();
     this.ui.pause.classList.remove('hidden');
     this.audio.thopter(false);
   }
@@ -413,13 +417,17 @@ export class Game {
     if (!p.onSand) return;
     const gap = this.time - p.lastBreak;
     if (gap < 0.22) return;
-    if (p.lastGap > 0 && Math.abs(gap - p.lastGap) / p.lastGap < 0.18) {
+    const match = p.lastGap > 0 && Math.abs(gap - p.lastGap) / p.lastGap < 0.18;
+    if (match) {
       p.sign = Math.min(100, p.sign + 6);
       this.beat('tooRegular', true);
       this.flash('#ff8a2a', 0.12);
     } else {
       p.sign = Math.max(0, p.sign - 19);
     }
+    p.strides.push({ gap: Math.min(gap, 1.2), match });
+    if (p.strides.length > 8) p.strides.shift();
+    this.drawStride();
     p.lastGap = gap;
     p.lastBreak = this.time;
   }
@@ -452,6 +460,7 @@ export class Game {
   startRide() {
     const p = this.p;
     p.hooks--;
+    p.rides++;
     p.ride = RIDE_TIME;
     p.sign = 0;
     p.slideT = 0;
@@ -499,18 +508,55 @@ export class Game {
     const visit = p.visits[zoneId] || 0;
     p.visits[zoneId] = visit + 1;
     const c = chapterFor(zoneId, visit);
-    this.ui.zoneBanner.querySelector('small').textContent = `Chapter ${roman(p.chapter)}`;
+    const num = roman(p.chapter);
+    p.journal.push({ num, title: c.title, line: c.line });
+    this.ui.zoneBanner.querySelector('small').textContent = `Chapter ${num}`;
+    this.ui.hudChapter.textContent = `Chapter ${num} · ${c.title}`;
+    // progress through the current cycle of five biomes
+    const inCycle = ZONES.findIndex((z) => z.id === zoneId) + 1;
+    $('zone-dashes').innerHTML = ZONES.map((_, i) => `<i class="${i < inCycle ? 'on' : ''}"></i>`).join('');
     this.banner(c.title);
-    if (p.chapter > 1) { this.cinema(true, 3600); this.audio.braam(0.6); }
-    if (p.chapter > 1) setTimeout(() => this.state === 'running' && this.narrate(c.line, 5200), 1400);
+    if (p.chapter > 1) {
+      this.cinema(true, 3600);
+      this.audio.braam(0.6);
+      this.app.classList.add('chaptering');
+      clearTimeout(this.duskTimer);
+      this.duskTimer = setTimeout(() => this.app.classList.remove('chaptering'), 3000);
+      setTimeout(() => this.state === 'running' && this.narrate(c.line, 5200), 1400);
+    }
   }
 
   syncInventory() {
     const p = this.p;
     this.setText('thumpers', this.ui.thumpers, String(p.thumpers));
+    this.setText('thumperBtn', this.ui.thumperBtnCount, `× ${p.thumpers}`);
     this.ui.invThumper.classList.toggle('empty', p.thumpers <= 0);
     this.ui.invHooks.classList.toggle('hidden', p.hooks <= 0);
     this.ui.thumperBtn.classList.toggle('empty', p.thumpers <= 0);
+  }
+
+  // Stride trace: one bar per recent move on sand, height = time since the move before it.
+  drawStride() {
+    const p = this.p, ui = this.ui;
+    const list = p.strides;
+    ui.strideEls.forEach((el, i) => {
+      const s = list[i - (8 - list.length)];
+      el.style.display = s ? '' : 'none';
+      if (!s) return;
+      el.style.height = `${Math.round(clamp(s.gap * 40, 5, 38))}px`;
+      el.classList.toggle('match', s.match);
+    });
+    const last = list[list.length - 1];
+    const st = ui.strideStatus;
+    st.textContent = !last ? 'Break your stride' : last.match ? 'Last two matched — too regular' : 'Uneven — the sand is quiet';
+    st.classList.toggle('good', !!last && !last.match);
+  }
+
+  renderJournal() {
+    const entries = this.p.journal.slice(-4);
+    $('journal-list').innerHTML = entries
+      .map((e) => `<li><span class="n">${e.num}</span><div><b>${e.title}</b><p>${e.line}</p></div></li>`)
+      .join('');
   }
 
   executeTurn() {
@@ -901,10 +947,19 @@ export class Game {
     $('over-dist').textContent = Math.floor(p.runDist).toLocaleString();
     $('over-spice').textContent = p.spice.toLocaleString();
     $('over-best').textContent = Math.floor(this.save.best).toLocaleString();
+    $('over-rides').textContent = String(p.rides);
     $('new-best').classList.toggle('hidden', !isBest);
+    // journey line: where in the cycle of five biomes Ishra fell
+    const z = zoneAt(p.runDist);
+    const at = ((z.index + z.local / z.zone.length) / ZONES.length) * 100;
+    $('journey-fill').style.width = `${at}%`;
+    $('journey-mark').style.left = `${at}%`;
+    [...$('journey-labels').children].forEach((el, i) => { el.className = i < z.index ? 'past' : i === z.index ? 'here' : ''; });
     this.ui.hud.classList.add('hidden');
     this.ui.over.classList.remove('hidden');
     this.ui.tint.style.opacity = 0;
+    this.ui.danger.style.opacity = 0;
+    this.ui.last.danger = '0.00';
     setTimeout(() => $('again-btn').focus({ preventScroll: true }), 50);
   }
 
@@ -1102,16 +1157,30 @@ export class Game {
     const p = this.p;
     const ui = this.ui;
     this.setText('score', ui.score, Math.floor(p.score).toLocaleString());
-    this.setText('mult', ui.mult, `x${p.mult}`);
+    this.setText('mult', ui.mult, `×${p.mult}`);
     this.setText('spice', ui.spice, String(p.spice));
     this.setText('dist', ui.dist, Math.floor(p.runDist).toLocaleString());
     const close = p.sign / 100;
+    const signPct = Math.round(close * 100);
     ui.wormMeter.classList.toggle('show', p.onSand || close > 0.03);
     ui.wormMeter.classList.toggle('lured', p.lure > 0);
-    ui.wormFill.style.width = `${Math.round(close * 100)}%`;
-    ui.waterFill.style.width = `${Math.round(p.water)}%`;
+    ui.wormFill.style.width = `${signPct}%`;
+    this.setText('wormPct', ui.wormPct, `${signPct}%`);
+    const danger = (Math.max(0, signPct - 40) / 60).toFixed(2);
+    if (ui.last.danger !== danger) { ui.last.danger = danger; ui.danger.style.opacity = danger; }
+    ui.thumperBtn.classList.toggle('show', p.thumpers > 0 && p.ride <= 0 && (signPct >= 40 || p.onSand));
+    ui.stride.classList.toggle('hidden', !p.onSand || p.ride > 0);
+    const water = Math.round(p.water);
+    if (ui.last.water !== water) {
+      ui.last.water = water;
+      ui.waterPct.textContent = `${water}%`;
+      const lit = Math.ceil(water / 10);
+      ui.waterSegs.forEach((s, i) => s.classList.toggle('on', i < lit));
+    }
     ui.waterBar.classList.toggle('low', p.water < 25);
-    ui.visionFill.style.width = `${Math.round(p.trance > 0 ? (p.trance / TRANCE_TIME) * 100 : p.vision)}%`;
+    const vision = p.trance > 0 ? (p.trance / TRANCE_TIME) * 100 : p.vision;
+    ui.visionBar.classList.toggle('show', vision > 0.5);
+    ui.visionFill.style.width = `${Math.round(vision)}%`;
     const pu = [];
     if (p.shield) pu.push(['Shield', '#5fb8ff', 1]);
     if (p.trance > 0) pu.push(['Prescience', '#9d7bff', p.trance / TRANCE_TIME]);
@@ -1121,7 +1190,7 @@ export class Game {
     const key = pu.map((x) => x[0] + Math.round(x[2] * 30)).join();
     if (key !== ui.last.pu) {
       ui.last.pu = key;
-      ui.powerups.innerHTML = pu.map(([n, c, f]) => `<div class="pu" style="color:${c}"><i style="background:${c};box-shadow:0 0 10px ${c}"></i><span style="color:var(--sand)">${n}</span><span class="t"><b style="width:${Math.round(f * 100)}%"></b></span></div>`).join('');
+      ui.powerups.innerHTML = pu.map(([n, c, f]) => `<div class="pu"><span>${n}</span><span class="t" style="color:${c}"><b style="width:${Math.round(f * 100)}%"></b></span></div>`).join('');
     }
     const tint = p.trance > 0 ? 0.2 : 0;
     if (ui.last.tint !== tint) {

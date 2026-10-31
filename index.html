@@ -3,115 +3,170 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#1a0f08" />
+    <meta name="theme-color" content="#5a1e08" />
     <meta name="description" content="Arrakis: The Crossing — carry the seed-water across the deep desert. Walk without rhythm, guard your water, ride the Maker." />
     <title>Arrakis: The Crossing</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='30' fill='%23c8742a'/><circle cx='32' cy='32' r='14' fill='%231a0f08'/><circle cx='32' cy='32' r='6' fill='%235fb8ff'/></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' fill='%23b9461a'/><circle cx='44' cy='40' r='5' fill='%23fff8ea'/><path d='M10 14 H54 L50 24 H14 Z' fill='%232a1007'/></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@200;300;400;500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
       <div id="vignette"></div>
+      <div id="danger"></div>
+      <div id="dusk"></div>
       <div id="letterbox"><i class="lb-top"></i><i class="lb-bottom"></i></div>
       <div id="tint"></div>
       <div id="flash"></div>
 
       <div id="hud" class="hidden">
-        <div class="hud-top">
-          <div class="hud-score">
-            <div id="score">0</div>
-            <div class="hud-label">Score <span id="mult">x1</span></div>
-            <div id="water-bar" class="gauge"><span>Water</span><div class="bar"><div id="water-fill"></div></div></div>
-            <div id="vision-bar" class="gauge"><span>Prescience</span><div class="bar"><div id="vision-fill"></div></div></div>
+        <div class="hud-left">
+          <div class="hud-cap" id="hud-chapter">Chapter I</div>
+          <div id="score">0</div>
+          <div class="hud-cap dim">Score · <span id="mult">×1</span></div>
+          <div id="water-bar" class="gauge">
+            <div class="gauge-head"><span>Water</span><span id="water-pct">100%</span></div>
+            <div class="segs" id="water-segs"></div>
           </div>
-          <div class="hud-right">
-            <div class="hud-stat"><span class="spice-dot"></span><span id="spice">0</span></div>
-            <div class="hud-stat dim"><span id="dist">0</span><small>m</small></div>
+          <div id="vision-bar" class="gauge">
+            <div class="gauge-head"><span>Prescience</span></div>
+            <div class="bar"><div id="vision-fill"></div></div>
+          </div>
+          <div id="powerups"></div>
+        </div>
+
+        <div class="hud-right">
+          <div class="hud-dist"><span id="dist">0</span> M</div>
+          <div class="hud-cap dim">Crossed</div>
+          <div class="hud-cap"><i class="spice-dot"></i><span id="spice">0</span> spice</div>
+          <div id="inventory">
+            <div id="inv-thumper" class="hud-cap">Thumpers <b id="inv-thumper-count">1</b></div>
+            <div id="inv-hooks" class="hud-cap hidden">Maker hooks</div>
           </div>
         </div>
+        <button id="pause-btn" aria-label="Pause"><svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true"><path d="M3 1 V13 M11 1 V13" stroke="currentColor" stroke-width="1.5"/></svg></button>
+
+        <div id="stride" class="hidden">
+          <div class="hud-cap">Open sand · your stride</div>
+          <div id="stride-bars"></div>
+          <div id="stride-status" class="hud-cap">Break your stride</div>
+        </div>
+
         <div id="worm-meter">
-          <div class="hud-label">Wormsign</div>
-          <div class="bar"><div id="worm-fill"></div></div>
+          <div class="gauge-head"><span>Wormsign</span><span id="worm-pct">0%</span></div>
+          <div class="bar"><div id="worm-fill"></div><i class="mark"></i></div>
         </div>
-        <div id="powerups"></div>
-        <div id="inventory">
-          <div id="inv-thumper" class="inv" title="Thumpers (E)"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="10.5" y="3" width="3" height="15" rx="1" fill="currentColor"/><rect x="8" y="2" width="8" height="4" rx="1" fill="currentColor"/><path d="M12 18 L6 22 M12 18 L18 22 M12 18 V22" stroke="currentColor" stroke-width="1.6"/></svg><b id="inv-thumper-count">1</b><kbd class="key-hint">E</kbd></div>
-          <div id="inv-hooks" class="inv hidden" title="Maker hooks"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 22 V8 a3 3 0 1 1 3 -3 M16 22 V8 a3 3 0 1 0 -3 -3" fill="none" stroke="currentColor" stroke-width="2"/></svg><b>Hooks</b></div>
-        </div>
-        <button id="thumper-btn" aria-label="Plant thumper">Thumper</button>
-        <button id="pause-btn" aria-label="Pause">
-          <svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+
+        <button id="thumper-btn" aria-label="Plant thumper">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M12 3 V18 M8 3 H16 M12 18 L6 22 M12 18 L18 22" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+          <span>Thumper <b id="thumper-btn-count">× 1</b></span><kbd class="key-hint">E</kbd>
         </button>
       </div>
 
       <div id="turn-hint" class="hidden"><span id="turn-arrow">&#10148;</span></div>
       <div id="tip" class="hidden"></div>
-      <div id="zone-banner" class="hidden"><small>Chapter I</small><span id="zone-text"></span></div>
+      <div id="zone-banner" class="hidden">
+        <small>Chapter I</small>
+        <span id="zone-text"></span>
+        <div id="zone-dashes"></div>
+      </div>
       <div id="narration" class="hidden"></div>
       <div id="toasts"></div>
 
       <section id="title" class="screen">
-        <div class="title-inner">
+        <svg class="scene" aria-hidden="true" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice">
+          <defs><radialGradient id="tSun"><stop offset="0" stop-color="#ffe2b0" stop-opacity="0.55"/><stop offset="1" stop-color="#ffd08a" stop-opacity="0"/></radialGradient></defs>
+          <circle cx="930" cy="470" r="150" fill="url(#tSun)"/>
+          <circle cx="930" cy="470" r="9" fill="#fff8ea"/>
+          <path d="M300 150 C300 128 470 116 640 116 C810 116 980 128 980 150 L964 196 C940 214 800 222 640 222 C480 222 340 214 316 196 Z" fill="#2a1007"/>
+          <path d="M380 216 L376 240 M520 222 L518 252 M760 222 L762 252 M900 216 L904 240" stroke="#2a1007" stroke-width="3"/>
+          <g transform="translate(220 -76)"><g fill="#1c0a04"><path d="M560 552 l3 -18 l3 18 Z M584 553 l3 -15 l3 15 Z M606 553 l3 -19 l3 19 Z M630 554 l3 -16 l3 16 Z M652 554 l3 -18 l3 18 Z"/></g>
+          <path d="M563 552 L470 566 M587 553 L494 567 M609 553 L516 568 M633 554 L540 569 M655 554 L562 570" stroke="#1c0a04" stroke-width="1.2" opacity="0.5"/></g>
+        </svg>
+        <div class="title-center">
           <div class="eyebrow">An endless journey</div>
           <h1><span>Arrakis</span><em>The Crossing</em></h1>
-          <p class="tagline">The wells of Sietch Qanat are failing. Carry the seed-water across the deep desert — and do not let the Maker hear you.</p>
-          <button id="play-btn" class="btn-primary">Begin the Crossing</button>
-          <ul class="rules">
-            <li><b>Stone is safe.</b> The Maker cannot follow onto rock.</li>
-            <li><b>Walk without rhythm.</b> On open sand, break your stride unevenly.</li>
-            <li><b>Guard your water.</b> Every blow and every hour costs you.</li>
-            <li><b>Hooks let you ride.</b> Thumpers buy you time.</li>
-          </ul>
+          <button id="play-btn" class="btn-line">Begin the Crossing</button>
           <div class="controls">
-            <div><kbd>&larr;</kbd><kbd>&rarr;</kbd><span>Weave</span></div>
-            <div><kbd>&uarr;</kbd><span>Jump</span></div>
-            <div><kbd>&darr;</kbd><span>Slide</span></div>
-            <div><kbd>E</kbd><span>Thumper</span></div>
-            <div class="touch-only"><span>Swipe to move &middot; Tap to jump</span></div>
+            <span><kbd>← →</kbd>Weave</span><span><kbd>↑</kbd>Jump</span><span><kbd>↓</kbd>Slide</span><span><kbd>E</kbd>Thumper</span>
+            <span class="touch-only">Swipe to move · tap to jump</span>
           </div>
-          <div class="title-meta">
-            <div class="best">Best <strong id="best-title">0</strong></div>
-            <div class="toggles">
-              <button id="quality-btn" class="btn-ghost">Quality: High</button>
-              <button id="sound-btn" class="btn-ghost">Sound: On</button>
-            </div>
-          </div>
-          <ol id="runs-list" class="runs"></ol>
-          <p id="title-saying" class="saying"></p>
         </div>
-        <footer>Fan-made tribute. Not affiliated with any Dune rights holder.</footer>
+        <ul class="laws">
+          <li><b>I · Stone is safe</b><span>The Maker cannot follow onto rock.</span></li>
+          <li><b>II · No rhythm</b><span>On open sand, break your stride unevenly.</span></li>
+          <li><b>III · Guard water</b><span>Every blow, every hour of sun, costs you.</span></li>
+          <li><b>IV · Ride</b><span>Thumpers buy time. Hooks buy the desert.</span></li>
+        </ul>
+        <div class="bar-bottom">
+          <p id="title-saying" class="saying"></p>
+          <button id="play-btn-m" class="btn-line mobile-play">Begin the Crossing</button>
+          <div class="title-meta">
+            <span class="best">Best <strong id="best-title">0</strong></span>
+            <button id="quality-btn" class="btn-ghost">Quality · High</button>
+            <button id="sound-btn" class="btn-ghost">Sound · On</button>
+          </div>
+        </div>
+        <footer>Fan-made tribute · not affiliated with any Dune rights holder</footer>
       </section>
 
       <section id="pause" class="screen hidden">
-        <div class="panel">
-          <h2>Paused</h2>
-          <button id="resume-btn" class="btn-primary">Resume</button>
-          <button id="quit-btn" class="btn-ghost">Abandon run</button>
+        <svg class="scene" aria-hidden="true" viewBox="0 0 1280 720" preserveAspectRatio="xMaxYMid slice">
+          <defs>
+            <linearGradient id="pRib" x1="0" x2="1"><stop offset="0" stop-color="#0b1116"/><stop offset="0.5" stop-color="#3a4a56"/><stop offset="1" stop-color="#0b1116"/></linearGradient>
+            <linearGradient id="pShaft" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#cfe0ea" stop-opacity="0.35"/><stop offset="1" stop-color="#cfe0ea" stop-opacity="0"/></linearGradient>
+          </defs>
+          <g fill="url(#pRib)"><rect x="700" width="74" height="720"/><rect x="790" width="74" height="720"/><rect x="880" width="74" height="720"/><rect x="970" width="74" height="720"/><rect x="1060" width="74" height="720"/><rect x="1150" width="74" height="720"/><rect x="1240" width="74" height="720"/></g>
+          <path d="M560 0 L660 0 L800 720 L520 720 Z" fill="url(#pShaft)"/>
+          <path d="M652 640 l3 -30 l3 30 Z M648 640 l14 0 l-1 -16 l-12 0 Z" fill="#05080b"/>
+        </svg>
+        <div class="journal">
+          <div class="eyebrow">Paused · the journal of Ishra</div>
+          <h2>The story so far</h2>
+          <ol id="journal-list"></ol>
+          <div class="keys">
+            <span><kbd>← →</kbd>Weave</span><span><kbd>↑</kbd>Jump</span><span><kbd>↓</kbd>Slide</span><span><kbd>E</kbd>Thumper</span>
+          </div>
+          <div class="actions">
+            <button id="resume-btn" class="btn-line">Resume</button>
+            <button id="quit-btn" class="btn-ghost">Abandon the crossing</button>
+          </div>
         </div>
       </section>
 
       <section id="over" class="screen hidden">
-        <div class="panel">
+        <svg class="scene" aria-hidden="true" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice">
+          <g transform="translate(1100 572) scale(0.7) translate(-1040 -466)"><ellipse cx="1040" cy="470" rx="190" ry="56" fill="#1a1815" opacity="0.88"/><ellipse cx="1040" cy="466" rx="150" ry="38" fill="#0a0908"/><path d="M902 462 L914 470 M940 446 L948 458 M990 438 L994 452 M1040 436 L1040 450 M1090 438 L1086 452 M1140 446 L1132 458 M1178 462 L1166 470" stroke="#f2efe9" stroke-width="3"/></g>
+          <path d="M156 590 l3 -24 l3 24 Z M152 590 l14 0 l-1 -14 l-12 0 Z" fill="#141210"/>
+          <path d="M159 590 L350 606" stroke="#141210" stroke-width="1.5" opacity="0.6"/>
+        </svg>
+        <div class="over-inner">
           <div class="eyebrow" id="over-chapter"></div>
           <h2 id="over-title">Taken by the Maker</h2>
           <p id="over-cause" class="epitaph"></p>
-          <div id="new-best" class="hidden">New best</div>
           <div class="over-score" id="over-score">0</div>
-          <div class="over-stats">
-            <div><span id="over-dist">0</span><small>meters crossed</small></div>
-            <div><span id="over-spice">0</span><small>spice</small></div>
-            <div><span id="over-best">0</span><small>best</small></div>
+          <div id="new-best" class="hidden">New best</div>
+          <div class="journey">
+            <div class="journey-line"><div id="journey-fill"></div><i id="journey-mark"></i></div>
+            <div class="journey-labels" id="journey-labels"></div>
           </div>
-          <p id="over-saying" class="saying"></p>
-          <button id="again-btn" class="btn-primary">Cross Again</button>
-          <button id="menu-btn" class="btn-ghost">Main Menu</button>
+          <div class="over-stats">
+            <div><span id="over-dist">0</span><small>Meters crossed</small></div>
+            <div><span id="over-spice">0</span><small>Spice</small></div>
+            <div><span id="over-rides">0</span><small>Worms ridden</small></div>
+            <div><span id="over-best">0</span><small>Best</small></div>
+          </div>
+          <div class="actions">
+            <button id="again-btn" class="btn-solid">Cross again</button>
+            <button id="menu-btn" class="btn-ghost">Main menu</button>
+          </div>
         </div>
+        <div class="bar-bottom"><p id="over-saying" class="saying"></p></div>
       </section>
 
-      <div id="loading"><div class="loader-ring"></div><div>Shaping the dunes&hellip;</div></div>
+      <div id="loading"><div class="loader-line"><i></i></div><div>Shaping the dunes</div></div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>
