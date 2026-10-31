@@ -233,8 +233,8 @@ export class Track {
       for (const lane of lanes) {
         let mesh;
         if (type === 'rock') {
-          mesh = P.makeRock('boulder', Math.floor(rng() * 4), 0.95, 2.4 + rng() * 1.2, 0.95);
-          mesh.position.set(lane * LANE_W, 1.1, -s);
+          mesh = P.makeRock('spire', Math.floor(rng() * 4), 0.8, 4.2 + rng() * 2.6, 0.8);
+          mesh.position.set(lane * LANE_W, -0.15, -s);
           mesh.rotation.y = rng() * 6.28;
         } else {
           mesh = P.makeColumn(4.5 + rng() * 2.5, rng() < 0.35);

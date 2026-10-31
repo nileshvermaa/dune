@@ -67,7 +67,15 @@ export function initProps() {
   mats.stone = mats.wall;
   mats.stoneDark = mats.wall;
 
-  cache.set('spiceCore', (() => { const g = new THREE.OctahedronGeometry(0.28, 0); g.scale(0.8, 1.25, 0.8); return g; })());
+  cache.set('spiceCore', (() => {
+    const core = new THREE.OctahedronGeometry(0.27, 0);
+    core.scale(0.75, 1.3, 0.75);
+    const ring = new THREE.TorusGeometry(0.4, 0.022, 5, 28);
+    ring.rotateX(Math.PI / 2 - 0.35);
+    const g = merge([[core, null, null], [ring, null, null], [new THREE.OctahedronGeometry(0.06, 0), null, M(0.4, 0.14, 0)], [new THREE.OctahedronGeometry(0.06, 0), null, M(-0.4, -0.14, 0)]]);
+    g.deleteAttribute('color');
+    return g;
+  })());
   cache.set('box', new THREE.BoxGeometry(1, 1, 1));
   cache.set('globe', new THREE.SphereGeometry(0.2, 16, 12));
   cache.set('block', rbox(1, 1, 1, 0.07, 1));

@@ -38,3 +38,16 @@ export function zoneAt(dist) {
   }
   return { zone: ZONES[0], index: 0, local: 0 };
 }
+
+// Path distance from `dist` to the start of the next zone with this id (0 if inside it).
+export function distToZone(dist, id) {
+  const here = zoneAt(dist);
+  if (here.zone.id === id) return 0;
+  let d = here.zone.length - here.local;
+  for (let k = 1; k <= ZONES.length; k++) {
+    const z = ZONES[(here.index + k) % ZONES.length];
+    if (z.id === id) return d;
+    d += z.length;
+  }
+  return Infinity;
+}

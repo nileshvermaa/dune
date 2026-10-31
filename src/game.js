@@ -12,10 +12,10 @@ import { Track, LANE_W, DECK_HALF, YAWS, speedAt } from './track.js';
 import { Sky, installHeightFog } from './sky.js';
 import { Runner } from './player.js';
 import { ChaserWorm, BreachWorm, DevourWorm } from './worm.js';
-import { DustField, ParticlePool } from './effects.js';
+import { DustField, ParticlePool, StormWall } from './effects.js';
 import { AudioEngine } from './audio.js';
 import { Input } from './input.js';
-import { ZONES, zoneAt } from './zones.js';
+import { ZONES, zoneAt, distToZone } from './zones.js';
 
 const GRAVITY = 40;
 const JUMP_V = 13.2;
@@ -42,6 +42,19 @@ const MILESTONES = [
 const $ = (id) => document.getElementById(id);
 
 // Final display-space grade: gentle S-curve, warm highlights / cool shadows, film grain.
+// Heat shimmer around the horizon band on hot, clear days.
+const SHIMMER = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAmt: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uAmt; varying vec2 vUv;
+    void main() {
+      float band = smoothstep(0.3, 0.52, vUv.y) * (1.0 - smoothstep(0.55, 0.72, vUv.y));
+      float o = sin(vUv.y * 230.0 + uTime * 6.0) * 0.0008 + sin(vUv.y * 97.0 - uTime * 3.7 + vUv.x * 31.0) * 0.0006;
+      gl_FragColor = texture2D(tDiffuse, vUv + vec2(o, o * 0.4) * band * uAmt);
+    }`,
+};
+
 const GRADE = {
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 1 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -89,6 +102,8 @@ export class Game {
     this.dust = new DustField(this.scene);
     this.dustPool = new ParticlePool(this.scene, 1800, false);
     this.glowPool = new ParticlePool(this.scene, 900, true);
+    this.stormWall = new StormWall(this.scene);
+    this.windDir = new THREE.Vector3(-9, 0, 4).normalize();
 
     this.thopter = makeOrnithopter(0.55);
     this.thopter.group.visible = false;
@@ -235,6 +250,8 @@ export class Game {
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.9);
       this.composer.addPass(this.bloom);
+      this.shimmer = new ShaderPass(SHIMMER);
+      this.composer.addPass(this.shimmer);
       this.composer.addPass(new OutputPass());
       this.grade = new ShaderPass(GRADE);
       this.composer.addPass(this.grade);
@@ -766,6 +783,36 @@ export class Game {
     }
   }
 
+  // Sand plumes where the chaser breaks the surface.
+  wormWake() {
+    const ch = this.chaser;
+    if (!ch.model.group.visible || ch.closeness < 0.12) return;
+    const pts = ch.model.points;
+    for (let i = 3; i < pts.length - 4; i += 5) {
+      const q = pts[i];
+      if (Math.abs(q.y - SAND_BED) > 3.2 || Math.random() > 0.5 * ch.closeness) continue;
+      this.dustPool.emit(this.v.d.set(q.x, SAND_BED + 0.4, q.z), { count: 1, spread: [2, 0.2, 2], vel: [0, 3, 0], velSpread: 2, life: 1.6, size: 2.6, grow: 3, color: this.colors.sand, gravity: -1.5, drag: 1, alpha: 0.45 });
+    }
+  }
+
+  // Wind lifting sand off nearby dune crests.
+  crestStreamers() {
+    const wd = this.windDir;
+    const c = this.camera.position;
+    const tries = this.quality === 'high' ? 5 : 2;
+    for (let k = 0; k < tries; k++) {
+      const a = Math.random() * Math.PI * 2, r = 40 + Math.random() * 130;
+      const x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+      const h = this.terrain.heightAt(x, z);
+      if (h < SAND_BED + 4) continue;
+      const up = this.terrain.heightAt(x - wd.x * 7, z - wd.z * 7);
+      const dn = this.terrain.heightAt(x + wd.x * 7, z + wd.z * 7);
+      if (h < up + 0.6 || h < dn + 0.6) continue;
+      const w = 5 + this.atmo.wind * 4;
+      this.dustPool.emit(this.v.d.set(x, h + 0.4, z), { count: 6, spread: [3, 0.3, 3], vel: [wd.x * w, 1.2, wd.z * w], velSpread: 1.2, life: 2.4, size: 2.4, grow: 4.5, color: this.colors.sandLight, gravity: 0.2, drag: 0.3, alpha: 0.28 });
+    }
+  }
+
   updateBreaches(dt) {
     this.breachTimer -= dt;
     if (this.breachTimer <= 0) {
@@ -899,6 +946,8 @@ export class Game {
 
       const chaseVisible = st === 'running' || st === 'paused';
       this.chaser.update(dt, pathDist, p.wormGap, chaseVisible);
+      this.wormWake();
+      this.crestStreamers();
       if (chaseVisible && this.chaser.closeness > 0.25 && Math.random() < 0.7) {
         this.dustPool.emit(this.chaser.headPos, { count: 3, spread: [3, 0.5, 3], vel: [0, 5, 0], velSpread: 3, life: 1.4, size: 2.2, grow: 2.5, color: this.colors.sand, gravity: -4, alpha: 0.6 });
       }
@@ -915,6 +964,7 @@ export class Game {
       this.glowPool.update(dt);
       this.dustColor.copy(this.sky.horizon).lerp(this.colors.sand, 0.4);
       this.dust.update(this.time, this.camera.position, this.atmo.dust, this.atmo.wind, this.dustColor);
+      this.stormWall.update(this.time, this.camera.position, this.camYaw, distToZone(pathDist, 'storm'), this.sky.horizon, this.sky.uniforms.uDay.value);
       this.updateCamera(dt);
       if (st === 'running') this.updateHUD();
     }
@@ -929,6 +979,8 @@ export class Game {
 
     if (this.grade) {
       this.grade.uniforms.uTime.value = this.time;
+      this.shimmer.uniforms.uTime.value = this.time;
+      this.shimmer.uniforms.uAmt.value = this.sky.uniforms.uDay.value * (1 - this.atmo.haze);
       this.grade.uniforms.uWarm.value = this.p.trance > 0 && this.state === 'running' ? -1 : 1;
     }
     if (this.composer && this.quality === 'high') this.composer.render();

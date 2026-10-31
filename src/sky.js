@@ -60,7 +60,7 @@ void main() {
   vec3 d = normalize(vDir);
   float h = d.y;
   vec3 col = mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.38));
-  col = mix(col, uHorizon * 0.85, smoothstep(0.0, -0.25, h));
+  col = mix(col, uHorizon * 0.85, (1.0 - smoothstep(-0.25, 0.0, h)));
   float sd = max(dot(d, uSunDir), 0.0);
   col += uSunColor * (pow(sd, 6.0) * 0.28 + pow(sd, 60.0) * 0.6) * uSunVis;
   col += uSunColor * smoothstep(0.9994, 0.99965, sd) * 6.0 * uSunVis;
@@ -68,7 +68,7 @@ void main() {
     vec3 sp = d * 260.0;
     vec3 cell = floor(sp);
     float r = hash(cell);
-    float star = step(0.993, r) * smoothstep(0.35, 0.0, length(fract(sp) - 0.5));
+    float star = step(0.993, r) * (1.0 - smoothstep(0.0, 0.35, length(fract(sp) - 0.5)));
     col += vec3(0.9, 0.95, 1.0) * star * uStars * smoothstep(0.0, 0.25, h) * (0.6 + 0.4 * sin(uTime * 2.0 + r * 80.0));
     col = moon(d, uMoon1, 0.99935, vec3(1.15, 1.1, 1.0), col);
     col = moon(d, uMoon2, 0.99975, vec3(0.9, 1.0, 1.15), col);
@@ -95,11 +95,11 @@ void main() {
   float rim = pow(max(dot(hz, sz), 0.0), 6.0) * 0.18 * uSunVis * uDay;
   vec3 rock = mix(uHorizon, uZenith, 0.25) * vec3(0.92, 0.82, 0.8);
   float e1 = 0.01 + ridgeH(az, 1.0) * 0.055;
-  float m1 = smoothstep(e1, e1 - 0.0012, h);
+  float m1 = 1.0 - smoothstep(e1 - 0.0012, e1, h);
   vec3 far = mix(rock, uHorizon, 0.55 + 0.35 * (1.0 - smoothstep(-0.01, e1, h))) + uSunColor * rim;
   col = mix(col, far, m1);
   float e2 = -0.004 + ridgeH(az + 1.3, 4.0) * 0.032;
-  float m2 = smoothstep(e2, e2 - 0.0012, h);
+  float m2 = 1.0 - smoothstep(e2 - 0.0012, e2, h);
   vec3 near = mix(rock * 0.82, uHorizon, 0.3 + 0.45 * (1.0 - smoothstep(-0.01, e2, h))) + uSunColor * rim * 1.4;
   col = mix(col, near, m2);
 

@@ -21,7 +21,7 @@ uniform vec3 uColor; uniform float uOpacity;
 varying float vA;
 void main() {
   float d = length(gl_PointCoord - 0.5);
-  float a = smoothstep(0.5, 0.0, d) * vA * uOpacity;
+  float a = (1.0 - smoothstep(0.0, 0.5, d)) * vA * uOpacity;
   if (a < 0.003) discard;
   gl_FragColor = vec4(uColor, a);
 }`;
@@ -178,4 +178,76 @@ export class ParticlePool {
   }
 
   setScale(px) { this.uniforms.uScale.value = px; }
+}
+
+const wallVert = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+const wallFrag = /* glsl */ `
+uniform float uTime; uniform float uAlpha; uniform vec3 uColor; uniform vec3 uLight;
+varying vec2 vUv;
+float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
+float fbm(vec2 p) { float a = 0.0, w = 0.5; for (int i = 0; i < 5; i++) { a += w * vn(p); p = p * 2.02 + 3.1; w *= 0.5; } return a; }
+void main() {
+  vec2 p = vec2(vUv.x * 16.0, vUv.y * 3.2);
+  float n = fbm(p + vec2(uTime * 0.04, -uTime * 0.1));
+  float n2 = fbm(p * 2.3 + n * 1.6 + vec2(-uTime * 0.07, 0.0));
+  float lobes = fbm(vec2(vUv.x * 9.0 + uTime * 0.02, uTime * 0.03));
+  float top = 0.42 + lobes * 0.5;
+  float a = (1.0 - smoothstep(top - 0.07, top, vUv.y)) * uAlpha;
+  a *= smoothstep(0.0, 0.1, vUv.x) * (1.0 - smoothstep(0.9, 1.0, vUv.x));
+  float rim = smoothstep(top - 0.16, top - 0.02, vUv.y);
+  vec3 c = mix(uColor * 0.42, uColor * 1.15, pow(n2, 1.4) * (0.5 + 0.5 * vUv.y / top));
+  c += uLight * rim * 0.35 * n;
+  gl_FragColor = vec4(c, min(1.0, a * (0.85 + 0.3 * n2)));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+// The Coriolis storm front: a towering billowing wall of sand that rises on the horizon
+// as the runner approaches the storm biome.
+export class StormWall {
+  constructor(scene) {
+    this.uniforms = {
+      uTime: { value: 0 }, uAlpha: { value: 0 },
+      uColor: { value: new THREE.Color() }, uLight: { value: new THREE.Color() },
+    };
+    const g = new THREE.CylinderGeometry(1, 1, 1, 64, 1, true, Math.PI - 1.35, 2.7);
+    g.translate(0, 0.5, 0);
+    this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({
+      uniforms: this.uniforms, vertexShader: wallVert, fragmentShader: wallFrag,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    }));
+    this.mesh.renderOrder = -5;
+    this.mesh.frustumCulled = false;
+    this.mesh.visible = false;
+    scene.add(this.mesh);
+    this.storm = new THREE.Color(0.62, 0.38, 0.2);
+  }
+
+  // dist: path metres until the storm zone (0 inside it)
+  update(time, center, yaw, dist, horizon, day) {
+    const k = dist <= 0 ? 0 : (1 - smoothstep(120, 950, dist));
+    const u = this.uniforms;
+    u.uAlpha.value = Math.min(1, k * 1.3);
+    this.mesh.visible = k > 0.01;
+    if (!this.mesh.visible) return;
+    const r = 260 + 560 * smoothstep(0, 950, dist);
+    this.mesh.scale.set(r, r * 0.62, r);
+    this.mesh.position.set(center.x, -25, center.z);
+    this.mesh.rotation.y = yaw;
+    u.uTime.value = time;
+    u.uColor.value.copy(this.storm).multiplyScalar(0.2 + 0.42 * day).lerp(horizon, 0.08);
+    u.uLight.value.copy(horizon);
+  }
+}
+
+function smoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }
