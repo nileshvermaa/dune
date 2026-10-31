@@ -47,8 +47,9 @@ const SHIMMER = {
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float uTime; uniform float uAmt; varying vec2 vUv;
     void main() {
-      float band = smoothstep(0.3, 0.52, vUv.y) * (1.0 - smoothstep(0.55, 0.72, vUv.y));
-      float o = sin(vUv.y * 230.0 + uTime * 6.0) * 0.0008 + sin(vUv.y * 97.0 - uTime * 3.7 + vUv.x * 31.0) * 0.0006;
+      // heat haze only on the far horizon band, well above the runner and the road ahead
+      float band = smoothstep(0.5, 0.57, vUv.y) * (1.0 - smoothstep(0.62, 0.7, vUv.y));
+      float o = sin(vUv.y * 230.0 + uTime * 4.0) * 0.00035 + sin(vUv.y * 97.0 - uTime * 2.5 + vUv.x * 31.0) * 0.00025;
       gl_FragColor = texture2D(tDiffuse, vUv + vec2(o, o * 0.4) * band * uAmt);
     }`,
 };
@@ -568,7 +569,6 @@ export class Game {
     p.prevS = p.s;
     p.laneX = pos.dot(next.right);
     p.prevLaneX = p.laneX;
-    p.lane = clamp(Math.round(p.laneX / LANE_W), -1, 1);
     p.seg = next;
     p.pendingTurn = 0;
     this.audio.turn();
@@ -603,10 +603,14 @@ export class Game {
     p.rideOff = damp(p.rideOff, p.ride > 0 ? RIDE_OFFSET : 0, p.ride > 0 ? 1.6 : 3.2, dt);
 
     let seg = p.seg;
-    // the road bends on its own; corners carry the runner round
-    if (p.s >= seg.length - 1.2 && seg.next) {
-      this.executeTurn();
-      seg = p.seg;
+    // The road bends on its own; corners carry the runner round. Each lane turns where it lines
+    // up with the same lane of the next stretch, so the runner keeps the lane they chose.
+    if (seg.next) {
+      const k = seg.fwd.dot(seg.next.right); // -1 right turn, +1 left turn
+      if (p.s >= seg.length + p.lane * LANE_W * k) {
+        this.executeTurn();
+        seg = p.seg;
+      }
     }
 
     p.laneX = damp(p.laneX, p.lane * LANE_W, 15, gdt);
@@ -1137,18 +1141,25 @@ export class Game {
       rate = 2.5;
       cam.fov = damp(cam.fov, 55, 2, dt);
     }
-    cam.position.x = damp(cam.position.x, tp.x, rate, dt);
-    cam.position.y = damp(cam.position.y, tp.y, rate, dt);
-    cam.position.z = damp(cam.position.z, tp.z, rate, dt);
+    // smooth follow on a clean base position; shake is layered on top and never fed back in
+    const base = this.camBase || (this.camBase = cam.position.clone());
+    base.x = damp(base.x, tp.x, rate, dt);
+    base.y = damp(base.y, tp.y, rate, dt);
+    base.z = damp(base.z, tp.z, rate, dt);
     if (!this.lookAt) this.lookAt = look.clone();
     this.lookAt.x = damp(this.lookAt.x, look.x, rate * 1.4, dt);
     this.lookAt.y = damp(this.lookAt.y, look.y, rate * 1.4, dt);
     this.lookAt.z = damp(this.lookAt.z, look.z, rate * 1.4, dt);
-    const worm = st === 'running' ? this.chaser.closeness : 0;
-    const sh = this.shake + worm * 0.12;
+    // a low rumble only when the worm is genuinely close
+    const worm = st === 'running' ? Math.max(0, this.chaser.closeness - 0.55) / 0.45 : 0;
+    const sh = this.shake + worm * 0.06;
     this.shake = Math.max(0, this.shake - dt * 1.6);
-    cam.position.x += (Math.random() - 0.5) * sh * 0.5;
-    cam.position.y += (Math.random() - 0.5) * sh * 0.5;
+    const t = this.time;
+    cam.position.set(
+      base.x + (Math.sin(t * 37.1) + Math.sin(t * 23.3 + 1.7)) * sh * 0.12,
+      base.y + (Math.sin(t * 41.7 + 0.6) + Math.sin(t * 19.9 + 2.9)) * sh * 0.12,
+      base.z
+    );
     cam.lookAt(this.lookAt);
     cam.updateProjectionMatrix();
   }
