@@ -227,7 +227,7 @@ export class Runner {
     this.torsoKit = torso.children.slice(kitFrom); // chest plate, harness, reservoir, tubes, collar
     // the skinned body's suit: matte woven stillsuit, a touch warmer than the procedural one
     const skinSuit = new THREE.MeshStandardMaterial({ color: '#5c4a3b', roughness: 0.72, metalness: 0.06 });
-    this.suitMats = { suit, suitDark, rib, leather, skinSuit };
+    this.suitMats = { suit, suitDark, rib, leather, skinSuit, hoodCloth, clothDark };
 
     /* ---- head, hood & mantle ---- */
     const head = new THREE.Group();
@@ -257,7 +257,7 @@ export class Runner {
     // face veil over the mask, a small mouth valve, nose-plug tubes running back to the suit
     add(head, new THREE.SphereGeometry(0.118, 20, 8, Math.PI * 1.5 - Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.55, Math.PI * 0.28), hoodCloth, 0, 0.0, 0.002);
     add(head, new THREE.CylinderGeometry(0.016, 0.02, 0.025, 10), rib, 0.02, -0.05, -0.113, Math.PI / 2);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: '#173a5c', emissive: '#2f86d6', emissiveIntensity: 0.55, roughness: 0.2 });
+    const eyeMat = (this.eyeMat = new THREE.MeshStandardMaterial({ color: '#173a5c', emissive: '#2f86d6', emissiveIntensity: 0.55, roughness: 0.2 }));
     for (const side of [-1, 1]) {
       const tube = new THREE.CatmullRomCurve3([
         new THREE.Vector3(side * 0.014, 0.0, -0.104), new THREE.Vector3(side * 0.06, -0.01, -0.09),
@@ -336,6 +336,41 @@ export class Runner {
     this.buildHooks();
   }
 
+  // Dress the body as a given carrier: colours, cloak length, glow of the eyes, and (on the
+  // skinned rig) height, breadth of the shoulders and length of the legs.
+  applyLook(look) {
+    this.look = look;
+    const M = this.suitMats;
+    M.suit.color.set(look.suit);
+    M.skinSuit.color.set(look.suit);
+    M.suitDark.color.set(look.suit).multiplyScalar(0.7);
+    M.leather.color.set(look.leather);
+    M.hoodCloth.color.set(look.hood);
+    M.clothDark.color.set(look.hood).multiplyScalar(0.78);
+    this.eyeMat.emissiveIntensity = look.eyes;
+    this.buildCloak(look.cloakLen, look.cloak[0], look.cloak[1]);
+    this.kin.ready = false; // re-seat the new cloth
+    if (this.rig) this.applyProportions();
+  }
+
+  applyProportions() {
+    const look = this.look, model = this.rig.model;
+    if (!look) return;
+    model.scale.setScalar(look.scale);
+    const b = (n) => model.getObjectByName(n);
+    // broader shoulders: widen the chest, keep the head its own size
+    const chest = b('DEF-spine003'), neck = b('DEF-neck');
+    if (chest && neck) { chest.scale.set(look.shoulders, 1, look.shoulders); neck.scale.set(1 / look.shoulders, 1, 1 / look.shoulders); }
+    // longer legs: stretch thigh and shin along their length, keep the feet true
+    for (const s of ['L', 'R']) {
+      const th = b('DEF-thigh' + s), sh = b('DEF-shin' + s), ft = b('DEF-foot' + s);
+      if (th) th.scale.set(1, look.limbs, 1);
+      if (sh) sh.scale.set(1, 1, 1);
+      if (ft) ft.scale.set(1, 1 / look.limbs, 1);
+    }
+    for (const h of this.hooks.held) h.scale.setScalar(1 / look.scale);
+  }
+
   // maker hooks: crossed on the back while carried, one in each fist while riding
   buildHooks() {
     if (this.hooks) for (const h of [this.hooks.back, ...this.hooks.held]) h.parent && h.parent.remove(h);
@@ -352,7 +387,7 @@ export class Runner {
     const held = this.hands.map((hand, i) => {
       const h = makeHookProp();
       h.castShadow = true;
-      h.scale.setScalar(this.rig ? 1 / 0.96 : 1);
+      h.scale.setScalar(this.rig ? 1 / this.rig.model.scale.x : 1);
       if (this.rig) { h.position.set(0, 0.09, 0); h.rotation.set(0, 0, 0); }
       else { h.position.set(0, -0.07, 0); h.rotation.set(Math.PI, 0, 0); }
       hand.add(h);
@@ -372,8 +407,12 @@ export class Runner {
     for (const h of H.held) h.visible = riding;
   }
 
-  buildCloak() {
-    const C = 11, R = 14, LEN = 1.02;
+  buildCloak(LEN = 1.02, topHex = '#7d5d40', hemHex = '#b8956b') {
+    if (this.cloakOuter) {
+      for (const m of [this.cloakOuter, this.cloakInner]) { this.root.remove(m); m.material.dispose(); }
+      this.cloakOuter.geometry.dispose();
+    }
+    const C = 11, R = 14;
     this.cloakC = C; this.cloakR = R;
     this.cloakAnchors = [];
     // rest shape in torso space: an arc across the back of the shoulders, widening toward the hem
@@ -408,7 +447,7 @@ export class Runner {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(C * R * 3), 3));
     const colors = new Float32Array(C * R * 3);
-    const top = new THREE.Color('#7d5d40'), hem = new THREE.Color('#b8956b'), c = new THREE.Color();
+    const top = new THREE.Color(topHex), hem = new THREE.Color(hemHex), c = new THREE.Color();
     for (let j = 0; j < R; j++) {
       for (let i = 0; i < C; i++) {
         const t = j / (R - 1);
@@ -429,7 +468,7 @@ export class Runner {
     }
     geo.setIndex(idx);
     const outer = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.95, sheen: 0.6, sheenColor: new THREE.Color('#e3b887'), sheenRoughness: 0.7, side: THREE.FrontSide });
-    const inner = new THREE.MeshStandardMaterial({ color: '#5a4230', roughness: 1, side: THREE.BackSide });
+    const inner = new THREE.MeshStandardMaterial({ color: top.clone().multiplyScalar(0.7), roughness: 1, side: THREE.BackSide });
     this.cloakOuter = new THREE.Mesh(geo, outer);
     this.cloakInner = new THREE.Mesh(geo, inner);
     for (const m of [this.cloakOuter, this.cloakInner]) {
@@ -677,7 +716,7 @@ export class Runner {
   // Swap the procedural body for the skinned, clip-driven one. The costume (hood, mantle, face,
   // harness, reservoir, belt) moves onto proxy frames riding the bones; the cloth follows them.
   attachRig(gltf) {
-    const S = 0.96; // clip rig is 1.83 m; Ishra is ~1.76 m
+    const S = this.look ? this.look.scale : 0.96; // clip rig is 1.83 m; Ishra is ~1.76 m
     const model = gltf.scene;
     model.rotation.y = Math.PI; // clips face +z, the runner faces -z
     model.scale.setScalar(S);
@@ -741,6 +780,7 @@ export class Runner {
     const prev = this.hooks;
     this.buildHooks();
     this.setHooks(prev.count, prev.riding);
+    if (this.look) this.applyProportions();
     this.landT = 0;
     this.kin.ready = false; // re-seat the cloth on the new frames
   }

@@ -59,6 +59,10 @@
           <div class="bar"><div id="worm-fill"></div><i class="mark"></i></div>
         </div>
 
+        <button id="ability-btn" aria-label="Use ability">
+          <i class="ability-fill" id="ability-fill"></i>
+          <span id="ability-name">Ability</span><kbd class="key-hint">F</kbd>
+        </button>
         <button id="thumper-btn" aria-label="Plant thumper">
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"><path d="M12 3 V18 M8 3 H16 M12 18 L6 22 M12 18 L18 22" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
           <span>Thumper <b id="thumper-btn-count">× 1</b></span><kbd class="key-hint">E</kbd>
@@ -97,6 +101,7 @@
           <h1><span>Arrakis</span><em>The Crossing</em></h1>
           <p class="story-tease">The wells of Sietch Qanat have failed. Carry the last seed-water across the open erg, and do not let the Maker hear you.</p>
           <button id="play-btn" class="btn-line">Begin the Crossing</button>
+          <button id="chars-btn" class="carrier-pick"><span>Carrier</span><b id="carrier-name">Ishra · Water-carrier</b><i aria-hidden="true">›</i></button>
           <div class="controls">
             <span><kbd>← →</kbd>Weave</span><span><kbd>↑</kbd>Jump</span><span><kbd>↓</kbd>Slide</span><span><kbd>E</kbd>Thumper</span>
             <span class="touch-only">Swipe to move · tap to jump</span>
@@ -118,6 +123,16 @@
           </div>
         </div>
         <footer>Fan-made tribute · not affiliated with any Dune rights holder</footer>
+      </section>
+
+      <section id="chars" class="screen hidden" aria-label="Choose your carrier">
+        <div class="chars-head">
+          <div class="eyebrow">Choose your carrier</div>
+          <h2>The Carriers</h2>
+          <div class="chars-bank">Spice bank <b id="spice-bank">0</b><span>·</span>Best <b id="best-dist">0 m</b></div>
+        </div>
+        <div class="chars-list" id="chars-list" role="list"></div>
+        <button id="chars-back" class="btn-line">Back</button>
       </section>
 
       <section id="pause" class="screen hidden">

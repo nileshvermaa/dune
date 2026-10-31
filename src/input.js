@@ -11,6 +11,7 @@ export class Input {
       Escape: 'pause', KeyP: 'pause',
       Enter: 'confirm',
       KeyE: 'thumper', KeyQ: 'thumper', ShiftLeft: 'thumper', ShiftRight: 'thumper',
+      KeyF: 'ability', KeyR: 'ability',
     };
     window.addEventListener('keydown', (e) => {
       const a = keys[e.code];

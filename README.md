@@ -30,12 +30,27 @@ photo textures and a CC0 animation set are credited in `public/textures` and `pu
   sand); Silent Step stops wormsign; Stillsuit Seal stops water loss; Spice Rush smashes through
   obstacles; ornithopters lift you clear; spice fills prescience.
 
+## The carriers
+
+Five carriers can take the water across, each with a trait, an active ability (on a cooldown)
+and a weakness. All but Ishra are locked: reach their distance in a single run, or unlock them
+early with spice banked across runs. Choose from **Carrier** on the title screen.
+
+| Carrier | Unlock | Trait | Ability | Weakness |
+| --- | --- | --- | --- | --- |
+| Ishra, Water-carrier | — | Water drains 25% slower | Still the Breath: wormsign halves | — |
+| Kaleb, Sandrider | 1,500 m / 500 spice | Starts with hooks; easier hooking; longer rides | Call the Maker: hook a worm at once | Drinks 15% faster |
+| Nadira, Spice Diviner | 3,000 m / 1,000 spice | Spice flows to her; prescience fills 2× | Foresight: 4 s spice-trance | Wormsign builds 15% faster |
+| Tarik, Dune-dancer | 5,000 m / 1,600 spice | Double jump; stride breaks quiet the sand more | Dune Leap: clear anything ahead | Crashes cost more water |
+| Zara, Sietch Warden | 8,000 m / 2,500 spice | Recharging shield; old paving restores water | Warden's Thumper: a free thumper | Faster hook prompts |
+
 | Action | Keyboard | Touch |
 | --- | --- | --- |
 | Weave between lanes / turn at a bend | ← → or A D | Swipe left / right |
 | Jump | ↑, W or Space | Swipe up or tap |
 | Slide (fast-drop in mid-air) | ↓ or S | Swipe down |
 | Plant a thumper | E, Q or Shift | Thumper button |
+| Carrier ability | F or R | Ability button |
 | Pause | Esc or P | Pause button |
 
 ## Develop

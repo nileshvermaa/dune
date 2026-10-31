@@ -17,6 +17,7 @@ import { AudioEngine } from './audio.js';
 import { Input } from './input.js';
 import { ZONES, zoneAt, distToZone } from './zones.js';
 import { BEATS, DEATHS, INTRO, chapterFor, roman, saying, waypointAt } from './story.js';
+import { CHARACTERS, characterById, isUnlocked } from './characters.js';
 import { makeThumper } from './props.js';
 import { loadPhotoTextures, updatePhotoTextures } from './materials.js';
 import { loadRunnerRig } from './rig.js';
@@ -188,6 +189,10 @@ export class Game {
     this.input = new Input(app, (a) => this.onAction(a));
     this.quality = this.save.quality || (isTouch ? 'low' : 'high');
     this.applyQuality();
+    // the chosen carrier (falls back to Ishra if the saved choice is still locked)
+    const saved = characterById(this.save.selected);
+    this.char = isUnlocked(saved, this.save) ? saved : CHARACTERS[0];
+    this.runner.applyLook(this.char.look);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.state === 'running') this.pause(); });
     this.resize();
@@ -202,6 +207,9 @@ export class Game {
   }
 
   /* ---------------- persistence & UI ---------------- */
+
+  // the current carrier's rule changes (see characters.js)
+  get mods() { return (this.char || CHARACTERS[0]).mods; }
 
   loadSave() {
     this.save = { runs: [], best: 0, played: 0 };
@@ -219,10 +227,10 @@ export class Game {
       turnHint: $('turn-hint'), tip: $('tip'), zoneBanner: $('zone-banner'), zoneText: $('zone-text'),
       toasts: $('toasts'), title: $('title'), pause: $('pause'), over: $('over'), tint: $('tint'), flash: $('flash'),
       narration: $('narration'), waterBar: $('water-bar'), visionFill: $('vision-fill'),
-      thumpers: $('inv-thumper-count'), invThumper: $('inv-thumper'), invHooks: $('inv-hooks'), thumperBtn: $('thumper-btn'),
+      thumpers: $('inv-thumper-count'), invThumper: $('inv-thumper'), invHooks: $('inv-hooks'), thumperBtn: $('thumper-btn'), abilityBtn: $('ability-btn'), abilityFill: $('ability-fill'), abilityName: $('ability-name'),
       qte: $('qte'), qteRing: $('qte-ring'), qteKey: $('qte-key'), qteLabel: $('qte-label'), qteDots: $('qte-dots'),
       intro: $('intro'), introCard: $('intro-card'), introKicker: $('intro-kicker'), introLine: $('intro-line'), introDots: $('intro-dots'),
-      goal: $('hud-goal'),
+      goal: $('hud-goal'), chars: $('chars'),
       thumperBtnCount: $('thumper-btn-count'), hudChapter: $('hud-chapter'), waterPct: $('water-pct'), visionBar: $('vision-bar'),
       wormPct: $('worm-pct'), danger: $('danger'), stride: $('stride'), strideBars: $('stride-bars'), strideStatus: $('stride-status'),
     });
@@ -230,10 +238,24 @@ export class Game {
     ui.strideEls = Array.from({ length: 8 }, () => ui.strideBars.appendChild(document.createElement('i')));
     $('journey-labels').innerHTML = ZONE_LABELS.map((l, i) => `<span>${roman(i + 1)} · ${l}</span>`).join('');
     ui.thumperBtn.addEventListener('click', (e) => { e.stopPropagation(); this.onAction('thumper'); });
+    ui.abilityBtn.addEventListener('click', (e) => { e.stopPropagation(); this.onAction('ability'); });
+    ui.abilityBtn.addEventListener('touchend', (e) => e.stopPropagation());
     ui.thumperBtn.addEventListener('touchend', (e) => e.stopPropagation());
     $('title-saying').textContent = `“${saying()}”`;
     $('play-btn').addEventListener('click', () => this.start());
     $('intro-skip').addEventListener('click', (e) => { e.stopPropagation(); this.endIntro(); });
+    $('chars-btn').addEventListener('click', () => this.openChars());
+    $('chars-back').addEventListener('click', () => this.closeChars());
+    const list = $('chars-list');
+    list.addEventListener('click', (e) => {
+      const pick = e.target.closest('[data-pick]'), buy = e.target.closest('[data-buy]'), card = e.target.closest('[data-preview]');
+      if (pick) this.pickChar(pick.dataset.pick);
+      else if (buy) this.buyChar(buy.dataset.buy);
+      else if (card) this.previewChar(card.dataset.preview);
+    });
+    const hover = (e) => { const card = e.target.closest('[data-preview]'); if (card) this.previewChar(card.dataset.preview); };
+    list.addEventListener('pointerover', hover);
+    list.addEventListener('focusin', hover);
     $('play-btn-m').addEventListener('click', () => this.start());
     $('again-btn').addEventListener('click', () => this.start());
     $('menu-btn').addEventListener('click', () => this.toTitle());
@@ -268,7 +290,85 @@ export class Game {
     }, 9000);
   }
 
+  /* ---------- the carriers: choose, preview, unlock ---------- */
+
+  openChars() {
+    this.state = 'chars';
+    this.ui.title.classList.add('hidden');
+    this.ui.chars.classList.remove('hidden');
+    this.renderChars();
+  }
+
+  closeChars() {
+    this.runner.applyLook(this.char.look); // undo any preview
+    this.previewing = null;
+    this.ui.chars.classList.add('hidden');
+    this.ui.title.classList.remove('hidden');
+    this.state = 'title';
+    this.refreshTitle();
+  }
+
+  renderChars() {
+    const sv = this.save;
+    $('spice-bank').textContent = (sv.spiceBank || 0).toLocaleString();
+    $('best-dist').textContent = `${(sv.bestDist || 0).toLocaleString()} m`;
+    $('chars-list').innerHTML = CHARACTERS.map((c) => {
+      const open = isUnlocked(c, sv);
+      const sel = c.id === this.char.id;
+      let foot;
+      if (open) {
+        foot = `<button class="char-pick" data-pick="${c.id}" ${sel ? 'disabled' : ''}>${sel ? 'Carrying the water' : `Choose ${c.name}`}</button>`;
+      } else {
+        const pct = Math.min(100, ((sv.bestDist || 0) / c.unlock.dist) * 100);
+        const afford = (sv.spiceBank || 0) >= c.unlock.spice;
+        foot = `<div class="char-lock"><div class="char-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+          <span>Reach ${c.unlock.dist.toLocaleString()} m in one run</span>
+          <button class="char-buy" data-buy="${c.id}" ${afford ? '' : 'disabled'}>Unlock now · ${c.unlock.spice.toLocaleString()} spice</button></div>`;
+      }
+      return `<article class="char-card${sel ? ' selected' : ''}${open ? '' : ' locked'}" role="listitem" tabindex="0" data-preview="${c.id}" title="${c.blurb}">
+        <header><span class="char-role">${c.role}</span><b class="char-name">${c.name}</b>${open ? '' : '<i class="char-lockicon" aria-label="Locked">◇</i>'}</header>
+        <p class="char-blurb">${c.blurb}</p>
+        <dl>
+          <dt>Trait</dt><dd>${c.passive}</dd>
+          <dt>Ability · every ${c.active.cooldown} s</dt><dd><b>${c.active.name}.</b> ${c.active.text}</dd>
+          <dt>Weakness</dt><dd>${c.weakness}</dd>
+        </dl>
+        ${foot}
+      </article>`;
+    }).join('');
+  }
+
+  // dress the figure behind the screen as whichever card is in focus (locked ones too)
+  previewChar(id) {
+    if (this.previewing === id) return;
+    this.previewing = id;
+    this.runner.applyLook(characterById(id).look);
+  }
+
+  pickChar(id) {
+    const c = characterById(id);
+    if (!isUnlocked(c, this.save)) return;
+    this.char = c;
+    this.save.selected = id;
+    this.writeSave();
+    this.runner.applyLook(c.look);
+    this.audio.init();
+    this.audio.powerup();
+    this.renderChars();
+  }
+
+  buyChar(id) {
+    const c = characterById(id);
+    const sv = this.save;
+    if (isUnlocked(c, sv) || (sv.spiceBank || 0) < c.unlock.spice) return;
+    sv.spiceBank -= c.unlock.spice;
+    sv.unlocked = [...(sv.unlocked || []), id];
+    this.writeSave();
+    this.pickChar(id);
+  }
+
   refreshTitle() {
+    if (this.char) $('carrier-name').textContent = `${this.char.name} · ${this.char.role}`;
     $('best-title').textContent = Math.floor(this.save.best).toLocaleString();
     $('quality-btn').textContent = `Quality · ${this.quality === 'low' ? 'Low' : 'High'}`;
   }
@@ -435,7 +535,10 @@ export class Game {
       lastBreak: -10, lastGap: 0, onSand: false, chapter: 0, visits: {}, beats: {},
       strides: [], rides: 0, journal: [],
       silent: 0, seal: 0, rush: 0, qte: null, balanceT: 0, turnWarned: false, wp: 0,
+      abilityCd: 0, shieldCd: 0, airJumped: false,
     };
+    this.p.hooks = this.mods.hooks || 0;
+    this.p.shieldCd = this.mods.shieldEvery || 0;
     for (const t of this.planted || []) this.scene.remove(t.group);
     this.planted = [];
     this.runner.root.visible = true;
@@ -572,6 +675,10 @@ export class Game {
       if (a === 'confirm' || a === 'pause') this.endIntro();
       return;
     }
+    if (st === 'chars') {
+      if (a === 'pause') this.closeChars();
+      return;
+    }
     if (st === 'over') {
       if (a === 'confirm') this.start();
       return;
@@ -585,6 +692,7 @@ export class Game {
     if (a === 'pause') return this.pause();
     if (p.qte) return this.qteInput(a);
     if (a === 'thumper') return this.plantThumper();
+    if (a === 'ability') return this.useAbility();
     if (p.ride > 0) return;
     if (a === 'left' || a === 'right') {
       const dir = a === 'left' ? -1 : 1;
@@ -604,19 +712,60 @@ export class Game {
         p.vy = JUMP_V;
         p.grounded = false;
         p.slideT = 0;
+        p.airJumped = false;
         this.audio.jump();
+        this.rhythmBreak();
+      } else if (this.mods.doubleJump && !p.airJumped && p.y > -0.3) {
+        p.vy = JUMP_V * 0.92;
+        p.airJumped = true;
+        this.audio.jump();
+        this.puff(8, 0.5);
         this.rhythmBreak();
       }
     } else if (a === 'slide') {
       if (p.fly > 0) return;
       if (p.grounded) {
         if (p.slideT <= 0) { this.audio.slide(); this.rhythmBreak(); }
-        p.slideT = SLIDE_TIME;
+        p.slideT = SLIDE_TIME * (this.mods.slide || 1);
       } else {
         p.vy = Math.min(p.vy, -22);
         p.slideQueued = true;
       }
     }
+  }
+
+  // the carrier's active ability, on its cooldown
+  useAbility() {
+    const p = this.p, ab = this.char.active;
+    if (p.abilityCd > 0 || p.ride > 0) return;
+    if (ab.id === 'still') {
+      p.sign = Math.max(0, p.sign - 50);
+      this.flash('#bfe6ff', 0.25);
+    } else if (ab.id === 'call') {
+      if (p.qte || p.fly > 0) return;
+      p.hooks = Math.max(p.hooks, 1);
+      p.sign = 100;
+      this.startQTE('hook');
+    } else if (ab.id === 'foresight') {
+      p.trance = 4;
+      this.flash('#8f7bff', 0.3);
+    } else if (ab.id === 'leap') {
+      if (p.fly > 0) return;
+      p.vy = JUMP_V * 1.9;
+      p.grounded = false;
+      p.airJumped = true;
+      p.slideT = 0;
+      p.invuln = Math.max(p.invuln, 1.5);
+      this.audio.jump();
+      this.puff(18, 0.8);
+      this.rhythmBreak();
+    } else if (ab.id === 'volley') {
+      p.thumpers++;
+      this.plantThumper();
+    }
+    p.abilityCd = ab.cooldown;
+    this.audio.powerup();
+    this.toast(ab.name);
   }
 
   // the stretch before a corner where a press toward the bend counts as the turn
@@ -637,10 +786,10 @@ export class Game {
   startQTE(kind) {
     const p = this.p;
     const d = this.rideDifficulty();
-    const n = kind === 'hook' ? 1 + Math.round(d * 3) : 1;
+    const n = kind === 'hook' ? Math.max(1, 1 + Math.round(d * 3) + (this.mods.hookSteps || 0)) : 1;
     const dirs = ['left', 'right', 'up', 'down'];
     const steps = Array.from({ length: n }, () => dirs[Math.floor(Math.random() * 4)]);
-    const window = kind === 'hook' ? 1.35 - d * 0.65 : 1.1 - d * 0.45;
+    const window = (kind === 'hook' ? 1.35 - d * 0.65 : 1.1 - d * 0.45) * (this.mods.hookWindow || 1);
     p.qte = { kind, steps, idx: 0, t: 0, window, slow: kind === 'hook' ? 0.12 : 0.45 };
     this.renderQTE();
     this.ui.qte.classList.remove('hidden');
@@ -715,7 +864,7 @@ export class Game {
       this.beat('tooRegular', true);
       this.flash('#ff8a2a', 0.12);
     } else {
-      p.sign = Math.max(0, p.sign - 19);
+      p.sign = Math.max(0, p.sign - 19 - (this.mods.breakBonus || 0));
     }
     p.strides.push({ gap: Math.min(gap, 1.2), match });
     if (p.strides.length > 8) p.strides.shift();
@@ -753,7 +902,7 @@ export class Game {
     const p = this.p;
     p.hooks--;
     // rides grow shorter and the Maker fights harder the further you go
-    p.ride = RIDE_TIME * (1 - this.rideDifficulty() * 0.45);
+    p.ride = RIDE_TIME * (1 - this.rideDifficulty() * 0.45) * (this.mods.rideTime || 1);
     p.balanceT = 3.2;
     p.rides++;
     p.sign = 0;
@@ -885,6 +1034,12 @@ export class Game {
     p.stumbleT = Math.max(0, p.stumbleT - dt);
     p.lure = Math.max(0, p.lure - dt);
     p.silent = Math.max(0, p.silent - dt);
+    p.abilityCd = Math.max(0, p.abilityCd - dt);
+    // Zara's shield recharges while she has none
+    if (this.mods.shieldEvery && !p.shield) {
+      p.shieldCd -= dt;
+      if (p.shieldCd <= 0) { p.shield = true; this.runner.setShield(true); p.shieldCd = this.mods.shieldEvery; this.audio.shieldHit(); }
+    }
     p.seal = Math.max(0, p.seal - dt);
     p.rush = Math.max(0, p.rush - dt);
     if (p.fly > 0) {
@@ -951,7 +1106,7 @@ export class Game {
         p.y = 0;
         p.vy = 0;
         p.grounded = true;
-        if (p.slideQueued) { p.slideQueued = false; p.slideT = SLIDE_TIME; this.audio.slide(); }
+        if (p.slideQueued) { p.slideQueued = false; p.slideT = SLIDE_TIME * (this.mods.slide || 1); this.audio.slide(); }
       } else if (p.y > 0 || !support) {
         p.grounded = false;
       }
@@ -960,7 +1115,7 @@ export class Game {
     if (p.slideT > 0) p.slideT -= gdt;
 
     // water: the stillsuit loses a little every moment, more under the sun
-    const drain = (0.85 + 0.7 * (1 - this.sky.night) + this.atmo.haze * 0.5) * (riding || p.fly > 0 ? 0.4 : 1) * (p.seal > 0 ? 0 : 1);
+    const drain = (0.85 + 0.7 * (1 - this.sky.night) + this.atmo.haze * 0.5) * (riding || p.fly > 0 ? 0.4 : 1) * (p.seal > 0 ? 0 : 1) * (this.mods.drain || 1);
     p.water = Math.max(0, p.water - drain * dt);
     if (p.water < 25) this.beat('lowWater');
     if (p.water <= 0) return this.die('thirst');
@@ -972,7 +1127,7 @@ export class Game {
       this.beat('firstSand');
       if (p.shield) this.beat('shieldSand');
       const ease = Math.min(1, 0.45 + p.runDist / 600); // gentle for the first stretch
-      let rate = (9 + p.speed * 0.28) * ease * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1);
+      let rate = (9 + p.speed * 0.28) * ease * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1) * (this.mods.signRate || 1);
       if (p.lure > 0 || p.silent > 0) rate = 0;
       p.sign = Math.min(100, p.sign + rate * gdt);
       if (p.sign > 60 && !p.beats.wormRising) this.audio.braam(0.7);
@@ -983,6 +1138,8 @@ export class Game {
       }
     } else if (!p.qte) {
       p.sign = Math.max(0, p.sign - 35 * gdt);
+      // the old stones remember Zara: she drinks from them
+      if (this.mods.stoneWater && !riding && p.fly <= 0) p.water = Math.min(100, p.water + this.mods.stoneWater * gdt);
     }
 
     if (p.fly <= 0 && !riding) this.collide(seg); // invulnerability is handled per obstacle (the rock face still kills)
@@ -1119,7 +1276,7 @@ export class Game {
       return;
     }
     // no instant death on the stones: the impact costs water and breath
-    p.water = Math.max(0, p.water - (o.kind === 'geyser' ? 40 : 30));
+    p.water = Math.max(0, p.water - (o.kind === 'geyser' ? 40 : 30) - (this.mods.crashCost || 0));
     this.audio.crash();
     this.flash('#ffffff', 0.35);
     this.shake = 0.9;
@@ -1135,7 +1292,7 @@ export class Game {
 
   pickups(seg, dt) {
     const p = this.p;
-    const magnet = p.trance > 0 || p.fly > 0 || p.ride > 0;
+    const magnet = p.trance > 0 || p.fly > 0 || p.ride > 0 || this.mods.magnet;
     const T = this.v.c.set(p.laneX + p.rideOff, p.y + 0.9, -p.s);
     for (const k of seg.pickups) {
       if (k.taken) continue;
@@ -1161,7 +1318,7 @@ export class Game {
       p.lastPickup = this.time;
       this.audio.pickup(p.combo);
       this.glowPool.emit(w, { count: 8, spread: [0.2, 0.2, 0.2], vel: [0, 2, 0], velSpread: 2.5, life: 0.45, size: 0.25, color: this.colors.spice, gravity: 0, drag: 3 });
-      p.vision = Math.min(100, p.vision + 3.5);
+      p.vision = Math.min(100, p.vision + 3.5 * (this.mods.vision || 1));
       if (p.vision >= 100 && p.trance <= 0) {
         p.vision = 0;
         p.trance = TRANCE_TIME;
@@ -1311,6 +1468,13 @@ export class Game {
     const p = this.p;
     this.state = 'over';
     const score = Math.floor(p.score);
+    // spice is banked across runs (it buys carriers); distance unlocks them too
+    const before = CHARACTERS.filter((c) => isUnlocked(c, this.save)).map((c) => c.id);
+    this.save.spiceBank = (this.save.spiceBank || 0) + p.spice;
+    this.save.bestDist = Math.max(this.save.bestDist || 0, Math.floor(p.runDist));
+    for (const c of CHARACTERS) {
+      if (!before.includes(c.id) && isUnlocked(c, this.save)) setTimeout(() => this.toast(`${c.name} the ${c.role} will now carry the water`), 2600);
+    }
     const prevBest = this.save.best || 0;
     const isBest = score > prevBest;
     this.save.best = Math.max(prevBest, score);
@@ -1576,6 +1740,14 @@ export class Game {
       look.y = Math.max(pos.y, 0) * 0.7 + 1.2;
       cam.fov = damp(cam.fov, 60 + sp * 12 + (p.trance > 0 ? -4 : 0), 3, dt);
       rate = 12;
+    } else if (st === 'chars') {
+      // the carrier on show: a slow turn around them at full height, above the cards
+      const t = this.time * 0.25;
+      tp.set(pos.x + Math.sin(t) * 5.4, pos.y + 1.0, pos.z + Math.cos(t) * 5.4);
+      look.copy(pos);
+      look.y = pos.y + 0.05;
+      rate = 3;
+      cam.fov = damp(cam.fov, 42, 3, dt);
     } else if (st === 'intro') {
       // the opening shots: the erg from on high, alongside Ishra, close on the face, then round
       // behind to the gameplay view as the run begins
@@ -1661,6 +1833,12 @@ export class Game {
     const danger = (Math.max(0, signPct - 40) / 60).toFixed(2);
     if (ui.last.danger !== danger) { ui.last.danger = danger; ui.danger.style.opacity = danger; }
     ui.thumperBtn.classList.toggle('show', p.thumpers > 0 && p.ride <= 0 && (signPct >= 40 || p.onSand));
+    // the ability button fills as its cooldown runs down
+    const ab = this.char.active;
+    this.setText('abilityName', ui.abilityName, p.abilityCd > 0 ? `${ab.name} · ${Math.ceil(p.abilityCd)}` : ab.name);
+    const ready = p.abilityCd <= 0;
+    ui.abilityBtn.classList.toggle('ready', ready);
+    ui.abilityFill.style.transform = `scaleX(${ready ? 1 : 1 - p.abilityCd / ab.cooldown})`;
     ui.stride.classList.toggle('hidden', !p.onSand || p.ride > 0);
     const water = Math.round(p.water);
     if (ui.last.water !== water) {
