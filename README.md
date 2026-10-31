@@ -40,18 +40,12 @@ npm install
 npm run dev
 ```
 
-## Deployment (GitHub Actions → Vercel)
+## Deployment
 
-`.github/workflows/deploy.yml` builds every push and pull request. Pushes to `main` deploy to
-production; pull requests get a preview URL posted as a comment. Vercel's own Git
-auto-deploy is disabled in `vercel.json` so the workflow is the single deploy path.
+Deployment runs through Vercel's GitHub integration — no secrets or environment variables needed.
+Import this repository once at https://vercel.com/new (it detects Vite automatically); after that
+every push to `main` deploys to production and every pull request gets a preview URL.
 
-One-time setup — add three repository secrets under **Settings → Secrets and variables → Actions**:
-
-1. `VERCEL_TOKEN` — create one at https://vercel.com/account/tokens
-2. `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` — run `npx vercel link` in this folder once, then
-   copy `orgId` and `projectId` from the generated `.vercel/project.json`.
-
-Until the secrets exist the workflow still builds, and skips the deploy step with a warning.
+`.github/workflows/ci.yml` builds every push and pull request on Node 20 and 22.
 
 Fan-made tribute. Not affiliated with any Dune rights holder. All story text is original.

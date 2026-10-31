@@ -13,8 +13,5 @@
         }
       ]
     }
-  ],
-  "git": {
-    "deploymentEnabled": false
-  }
+  ]
 }
