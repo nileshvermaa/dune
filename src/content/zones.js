@@ -1,4 +1,7 @@
-// Biomes the causeway passes through, cycled by distance travelled.
+// Biomes the trail passes through, cycled by distance travelled.
+//
+// To add a biome, see "Add a biome" in docs/ARCHITECTURE.md. `weights` picks obstacles by id from
+// world/obstacles.js (tests/content.test.js checks they all exist).
 
 export const ZONES = [
   {

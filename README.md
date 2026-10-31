@@ -57,7 +57,25 @@ early with spice banked across runs. Choose from **Carrier** on the title screen
 
 ```bash
 npm install
-npm run dev
+npm run dev      # http://localhost:5173
+npm run check    # lint + unit tests + production build
+```
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the code fits together, and step-by-step recipes
+  for adding powerups, obstacles, carriers, biomes and story.
+- [CONTRIBUTING.md](CONTRIBUTING.md): scripts, workflow and style.
+- [docs/ROADMAP.md](docs/ROADMAP.md): ideas worth building next.
+
+```
+src/
+  game/       the Game hub, its systems (run, maker, hud, ...) and shared constants
+  content/    data and tuning: difficulty curves, powerups, abilities, carriers, biomes, story
+  world/      trail, obstacles, terrain, sky, procedural props, effects
+  actors/     the runner and the worms
+  engine/     noise, geometry, materials, textures, input
+  audio/      procedural sound
+  styles/     CSS partials
+tests/       Vitest unit tests
 ```
 
 ## Deployment
@@ -66,6 +84,6 @@ Deployment runs through Vercel's GitHub integration — no secrets or environmen
 Import this repository once at https://vercel.com/new (it detects Vite automatically); after that
 every push to `main` deploys to production and every pull request gets a preview URL.
 
-`.github/workflows/ci.yml` builds every push and pull request on Node 20 and 22.
+`.github/workflows/ci.yml` lints, tests and builds every push and pull request (build on Node 20 and 22).
 
 Fan-made tribute. Not affiliated with any Dune rights holder. All story text is original.

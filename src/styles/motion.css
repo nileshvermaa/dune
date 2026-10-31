@@ -1,0 +1,97 @@
+/* =====================================================================
+   Motion: the opening, a living title, and screens that arrive rather than appear.
+   ===================================================================== */
+
+/* the opening captions: film subtitles over the intro camera */
+#intro { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.intro-card { position: absolute; left: 50%; bottom: calc(var(--bar) + 7vh); transform: translateX(-50%); width: min(760px, 88vw); text-align: center; opacity: 0; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85), 0 0 22px rgba(0, 0, 0, 0.5); }
+.intro-card.show { animation: introCard 4.6s ease forwards; }
+@keyframes introCard { 0% { opacity: 0; transform: translate(-50%, 10px); } 14% { opacity: 1; transform: translate(-50%, 0); } 84% { opacity: 1; } 100% { opacity: 0; } }
+.intro-kicker { font-size: 11px; font-weight: 500; letter-spacing: 0.6em; margin-right: -0.6em; text-transform: uppercase; color: var(--peach); margin-bottom: 14px; }
+.intro-line { margin: 0; font-size: clamp(17px, 2.1vw, 26px); font-weight: 300; line-height: 1.5; color: #fff; }
+.intro-dots { position: absolute; left: 50%; bottom: calc(var(--bar) + 3vh); transform: translateX(-50%); display: flex; gap: 10px; }
+.intro-dots i { width: 22px; height: 1px; background: rgba(255, 243, 228, 0.3); transition: background 0.6s; }
+.intro-dots i.on { background: var(--cream); }
+.intro-skip { pointer-events: auto; position: absolute; right: 32px; bottom: calc(var(--bar) + 3vh - 14px); min-height: 44px; padding: 0 18px; background: transparent; border: 1px solid rgba(255, 243, 228, 0.35); color: var(--cream); font-size: 11px; letter-spacing: 0.45em; text-transform: uppercase; cursor: pointer; z-index: 7; }
+
+/* the title: the live desert shows through; text arrives; wind runs across the frame */
+#title { background: linear-gradient(180deg, rgba(120, 38, 10, 0.62) 0%, rgba(150, 56, 18, 0.28) 32%, rgba(190, 80, 28, 0.08) 58%, rgba(60, 20, 6, 0.72) 100%); }
+#title::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.35;
+  background: repeating-linear-gradient(176deg, transparent 0 46px, rgba(255, 225, 190, 0.05) 46px 47px, transparent 47px 120px);
+  background-size: 200% 200%; animation: windStreaks 7s linear infinite; mix-blend-mode: screen; }
+@keyframes windStreaks { from { background-position: 0 0; } to { background-position: -600px 40px; } }
+#title .eyebrow, #title h1 em, #title .btn-line, #title .controls, #title .laws li, #title .story-tease { opacity: 0; animation: rise 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+#title h1 span { opacity: 0; animation: trackIn 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s forwards; }
+#title h1 em { animation-delay: 0.9s; }
+#title .story-tease { animation-delay: 1.2s; }
+#title .btn-line { animation: rise 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) 1.5s forwards, glow 3.2s ease-in-out 2.8s infinite; }
+#title .controls { animation-delay: 1.8s; }
+#title .laws li:nth-child(1) { animation-delay: 2.0s; }
+#title .laws li:nth-child(2) { animation-delay: 2.15s; }
+#title .laws li:nth-child(3) { animation-delay: 2.3s; }
+#title .laws li:nth-child(4) { animation-delay: 2.45s; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes trackIn { from { opacity: 0; letter-spacing: 1.2em; margin-right: -1.2em; filter: blur(8px); } to { opacity: 1; letter-spacing: 0.55em; margin-right: -0.55em; filter: none; } }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 0 rgba(255, 210, 160, 0); } 50% { box-shadow: 0 0 34px rgba(255, 200, 140, 0.35), inset 0 0 18px rgba(255, 220, 180, 0.12); } }
+.story-tease { margin: -24px 0 30px; max-width: 520px; font-size: 15px; font-weight: 300; line-height: 1.6; color: #ffe8d2; text-shadow: var(--shadow); }
+#title-saying { transition: opacity 0.8s; }
+
+/* chapter cards: the title tracks in, the dashes light one by one */
+#zone-banner span { animation: trackChapter 3.6s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+@keyframes trackChapter { from { letter-spacing: 1.1em; filter: blur(6px); } 30% { filter: none; } to { letter-spacing: 0.55em; } }
+#zone-dashes i { transform: scaleX(0); transform-origin: left; animation: dash 0.5s ease forwards; }
+#zone-dashes i:nth-child(1) { animation-delay: 0.5s; } #zone-dashes i:nth-child(2) { animation-delay: 0.65s; }
+#zone-dashes i:nth-child(3) { animation-delay: 0.8s; } #zone-dashes i:nth-child(4) { animation-delay: 0.95s; }
+#zone-dashes i:nth-child(5) { animation-delay: 1.1s; }
+@keyframes dash { to { transform: scaleX(1); } }
+
+/* pause: the frozen desert shows behind a cold veil; light sways, dust drifts */
+#pause { background: rgba(13, 20, 26, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+#pause .scene { opacity: 0.8; }
+#pause .scene path:first-of-type { transform-origin: 610px 0; animation: shaft 9s ease-in-out infinite; }
+@keyframes shaft { 0%, 100% { transform: rotate(-1.5deg); opacity: 0.85; } 50% { transform: rotate(1.8deg); opacity: 1; } }
+.motes { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.motes i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: rgba(220, 235, 245, 0.7); animation: mote linear infinite; }
+@keyframes mote { from { transform: translate(0, 20px); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { transform: translate(-60px, -160px); opacity: 0; } }
+#pause:not(.hidden) .journal > * { opacity: 0; animation: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+#pause:not(.hidden) .journal > *:nth-child(2) { animation-delay: 0.08s; }
+#pause:not(.hidden) .journal > *:nth-child(3) { animation-delay: 0.16s; }
+#pause:not(.hidden) .journal > *:nth-child(4) { animation-delay: 0.24s; }
+#pause:not(.hidden) .journal > *:nth-child(5) { animation-delay: 0.32s; }
+
+/* game over: the verdict arrives, the score counts up, the journey line draws itself */
+#over:not(.hidden) .over-inner > * { opacity: 0; animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+#over:not(.hidden) .over-inner > *:nth-child(2) { animation: trackOver 1.8s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s forwards; }
+#over:not(.hidden) .over-inner > *:nth-child(3) { animation-delay: 0.5s; }
+#over:not(.hidden) .over-inner > *:nth-child(4) { animation-delay: 0.7s; }
+#over:not(.hidden) .over-inner > *:nth-child(5) { animation-delay: 1.2s; }
+#over:not(.hidden) .over-inner > *:nth-child(6) { animation-delay: 1.0s; }
+#over:not(.hidden) .over-inner > *:nth-child(7) { animation-delay: 1.4s; }
+#over:not(.hidden) .over-inner > *:nth-child(8) { animation-delay: 1.7s; }
+@keyframes trackOver { from { opacity: 0; letter-spacing: 1em; filter: blur(6px); } to { opacity: 1; letter-spacing: 0.5em; filter: none; } }
+#journey-fill, #journey-mark { transition: width 1.4s cubic-bezier(0.3, 0.6, 0.2, 1) 1.1s, left 1.4s cubic-bezier(0.3, 0.6, 0.2, 1) 1.1s; }
+#over .scene g.maw { transform-box: fill-box; transform-origin: center; animation: maw 5s ease-in-out infinite; }
+@keyframes maw { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.04, 0.86); } }
+.sandfall { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.sandfall i { position: absolute; top: -20px; width: 1px; height: 14px; background: linear-gradient(rgba(60, 50, 40, 0), rgba(60, 50, 40, 0.35)); animation: fall linear infinite; }
+@keyframes fall { to { transform: translateY(110vh); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #title::after, .motes i, .sandfall i, #title .btn-line, #pause .scene path, #over .scene g.maw { animation: none !important; }
+  #title *, #over .over-inner > *, #pause .journal > * { animation-duration: 0.01s !important; animation-delay: 0s !important; }
+}
+
+/* phones: the new pieces */
+@media (max-width: 700px) {
+  .hud-right > .hud-goal { display: block !important; max-width: 160px; text-align: right; line-height: 1.6; letter-spacing: 0.3em; margin-top: 6px; }
+  .story-tease { margin: -18px 0 22px; font-size: 13px; padding: 0 8px; }
+  .intro-card { bottom: 18vh; width: 90vw; }
+  .intro-line { font-size: 17px; }
+  .intro-kicker { font-size: 10px; letter-spacing: 0.4em; margin-right: -0.4em; }
+  .intro-dots { bottom: 12vh; }
+  .intro-skip { right: 16px; bottom: calc(env(safe-area-inset-bottom) + 24px); }
+  #qte { top: 30%; }
+  .qte-target { width: 104px; height: 104px; }
+  #qte-key { font-size: 46px; }
+  #pause { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+}

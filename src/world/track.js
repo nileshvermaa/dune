@@ -1,42 +1,15 @@
 import * as THREE from 'three';
-import { mulberry32, clamp, lerp } from './noise.js';
-import { zoneAt } from './zones.js';
+import { mulberry32, lerp } from '../engine/noise.js';
+import { zoneAt } from '../content/zones.js';
 import * as P from './props.js';
 import { SAND_BED } from './terrain.js';
+import { LANE_W, HALF_W, DECK_HALF, DIRS, YAWS } from './layout.js';
+import { OBSTACLES, EARLY_MIX } from './obstacles.js';
+import { speedAt, layoutDifficulty, obstacleSpacing, stoneChance, stoneLength } from '../content/difficulty.js';
+import { pickPowerup } from '../content/powerups.js';
 
 // The trail across open desert: straight segments joined by 90° corners the runner must turn
 // at, populated with obstacles, spice, power-ups and zone-specific scenery.
-
-export const LANE_W = 2.2;
-export const HALF_W = 3.6;
-export const DECK_HALF = 4.0;
-const DECK_DEPTH = 3.4;
-
-export const DIRS = [
-  new THREE.Vector3(0, 0, -1),
-  new THREE.Vector3(1, 0, 0),
-  new THREE.Vector3(0, 0, 1),
-  new THREE.Vector3(-1, 0, 0),
-];
-export const YAWS = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
-
-// Never stops climbing: a quick early ramp, then +2.5 m/s every kilometre, forever.
-export function speedAt(dist) {
-  return 14 + 6 * (1 - Math.exp(-dist / 1500)) + dist * 0.0025;
-}
-
-function deckGeometry(w, h, l) {
-  const g = new THREE.BoxGeometry(w, h, l);
-  const uv = g.attributes.uv;
-  const dims = [[l, h], [l, h], [w, l], [w, l], [w, h], [w, h]];
-  for (let f = 0; f < 6; f++) {
-    for (let v = 0; v < 4; v++) {
-      const i = f * 4 + v;
-      uv.setXY(i, (uv.getX(i) * dims[f][0]) / 4, (uv.getY(i) * dims[f][1]) / 4);
-    }
-  }
-  return g;
-}
 
 const TILE = {
   base: new THREE.Color('#c9a17a'),
@@ -49,27 +22,6 @@ const TILE = {
   cornice: new THREE.Color('#cba882'),
   buttress: new THREE.Color('#a9805a'),
 };
-
-const DRIFT_TOP = new THREE.Color('#dcae78');
-const DRIFT_EDGE = new THREE.Color('#ad7c4f');
-
-let medalRing = null;
-let medalDisc = null;
-const MEDAL_DISC = () => medalDisc || (medalDisc = new THREE.CylinderGeometry(1.7, 1.7, 0.04, 40));
-const MEDAL_RING = () => medalRing || (medalRing = new THREE.RingGeometry(1.45, 1.6, 48));
-
-function smoothstepJS(a, b, x) {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
-function shuffle(arr, rng) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
 
 export class Track {
   constructor(scene, terrain) {
@@ -198,7 +150,7 @@ export class Track {
   }
 
   pickType(zone, rng, early) {
-    const w = early ? { rock: 3, low: 2, arch: 1 } : zone.weights;
+    const w = early ? EARLY_MIX : zone.weights;
     let total = 0;
     for (const k in w) total += w[k];
     let r = rng() * total;
@@ -209,14 +161,14 @@ export class Track {
   populate(seg, first) {
     const rng = this.rng;
     const L = seg.length;
-    const diff = clamp(seg.startDist / 9000, 0, 1);
+    const diff = layoutDifficulty(seg.startDist);
     const events = [];
     // the old road survives only in scattered stretches of paving: the one ground the Maker
     // cannot follow onto. They grow rarer and shorter the deeper into the desert you go.
     seg.rocks = [];
     if (first) seg.rocks.push([-60, 40]);
-    else if (L > 80 && rng() < 0.55 - diff * 0.25) {
-      const len = 16 + rng() * 22 * (1 - diff * 0.5);
+    else if (L > 80 && rng() < stoneChance(diff)) {
+      const len = stoneLength(diff, rng);
       const a = 25 + rng() * Math.max(0, L - 60 - len);
       seg.rocks.push([a, a + len]);
     }
@@ -230,7 +182,7 @@ export class Track {
       events.push(this.placeObstacle(seg, type, s, rng, diff));
       const v = speedAt(seg.startDist + s);
       // reaction time between obstacles tightens slowly as the run goes on
-      s += Math.max(16, v * (1.15 - diff * 0.3)) + rng() * 14 * (1.2 - diff);
+      s += obstacleSpacing(v, diff, rng);
     }
     this.placePickups(seg, events, first);
   }
@@ -241,94 +193,10 @@ export class Track {
     return o;
   }
 
+  // build one obstacle (see world/obstacles.js) and note how the runner gets past it
   placeObstacle(seg, type, s, rng, diff) {
-    const g = seg.group;
-    const ev = { s, type, free: [-1, 0, 1], blocked: [] };
-    if (type === 'rock' || type === 'column') {
-      const n = rng() < 0.4 + diff * 0.3 ? 2 : 1;
-      const lanes = shuffle([-1, 0, 1], rng).slice(0, n);
-      ev.blocked = lanes;
-      ev.free = [-1, 0, 1].filter((l) => !lanes.includes(l));
-      for (const lane of lanes) {
-        let mesh;
-        if (type === 'rock') {
-          mesh = P.makeRock('spire', Math.floor(rng() * 4), 0.8, 4.2 + rng() * 2.6, 0.8);
-          mesh.position.set(lane * LANE_W, -0.15, -s);
-          mesh.rotation.y = rng() * 6.28;
-        } else {
-          mesh = P.makeColumn(4.5 + rng() * 2.5, rng() < 0.35);
-          mesh.scale.setScalar(0.85);
-          mesh.position.set(lane * LANE_W, 0, -s);
-        }
-        g.add(mesh);
-        this.addCollider(seg, { kind: type, mesh, s0: s - 0.75, s1: s + 0.75, x0: lane * LANE_W - 0.85, x1: lane * LANE_W + 0.85, y0: 0, y1: 20 });
-      }
-    } else if (type === 'low') {
-      // a tumbled wall: jump it, or run through the breach in it
-      const open = Math.floor(rng() * 3) - 1;
-      ev.free = [open];
-      ev.blocked = [-1, 0, 1].filter((l) => l !== open);
-      ev.jump = true;
-      for (const lane of ev.blocked) {
-        const mesh = P.makeRubbleWall(rng);
-        mesh.scale.set(0.29, 1, 1);
-        mesh.position.set(lane * LANE_W, 0, -s);
-        g.add(mesh);
-        this.addCollider(seg, { kind: type, mesh, s0: s - 0.45, s1: s + 0.45, x0: lane * LANE_W - 1.1, x1: lane * LANE_W + 1.1, y0: 0, y1: 0.95 });
-      }
-    } else if (type === 'pipe') {
-      const mesh = P.makePipe();
-      mesh.position.z = -s;
-      g.add(mesh);
-      this.addCollider(seg, { kind: type, mesh, s0: s - 0.45, s1: s + 0.45, x0: -HALF_W, x1: HALF_W, y0: 0, y1: 0.95 });
-      ev.jump = true;
-    } else if (type === 'tall') {
-      // a standing slab across two lanes: no jumping it, only around
-      const open = rng() < 0.5 ? -1 : 1;
-      ev.free = [open];
-      ev.blocked = [0, -open];
-      const mesh = P.makeRuinWall(rng);
-      mesh.scale.set(0.3, 0.55, 0.6);
-      mesh.position.set(-open * LANE_W * 0.5, -0.5, -s);
-      g.add(mesh);
-      const x0 = open < 0 ? -LANE_W * 0.5 : -HALF_W, x1 = open < 0 ? HALF_W : LANE_W * 0.5;
-      this.addCollider(seg, { kind: type, mesh, s0: s - 0.5, s1: s + 0.5, x0, x1, y0: 0, y1: 20 });
-    } else if (type === 'devil') {
-      // a dust devil sweeping back and forth across the trail
-      const mesh = P.makeDustDevil();
-      mesh.position.set(0, 0, -s);
-      g.add(mesh);
-      const col = this.addCollider(seg, { kind: 'devil', mesh, s0: s - 1.1, s1: s + 1.1, x0: -1, x1: 1, y0: 0, y1: 20 });
-      seg.animated.push({ type: 'devil', mesh, col, phase: rng() * 6.28, speed: 1.1 + diff * 0.9 + rng() * 0.4 });
-      ev.free = [];
-    } else if (type === 'arch') {
-      const z = seg.zone.id;
-      const mesh = z === 'ruins' || z === 'shieldwall' ? P.makeLintel(false) : z === 'spice' ? P.makeLintel(true) : P.makeBoneArch(true);
-      mesh.position.z = -s;
-      g.add(mesh);
-      this.addCollider(seg, { kind: type, mesh, s0: s - 0.55, s1: s + 0.55, x0: -HALF_W, x1: HALF_W, y0: 1.18, y1: 12 });
-      ev.slide = true;
-    } else if (type === 'gap') {
-      const len = 4.2 + diff * 0.8;
-      seg.gaps.push([s - len / 2, s + len / 2]);
-      ev.jump = true;
-      ev.gap = true;
-    } else if (type === 'geyser') {
-      const n = rng() < 0.5 ? 2 : 1;
-      const lanes = shuffle([-1, 0, 1], rng).slice(0, n);
-      ev.blocked = lanes;
-      ev.free = [-1, 0, 1].filter((l) => !lanes.includes(l));
-      for (const lane of lanes) {
-        const gy = P.makeGeyser();
-        seg.mats.push(gy.disc.material);
-        gy.group.position.set(lane * LANE_W, 0, -s);
-        g.add(gy.group);
-        const col = this.addCollider(seg, { kind: 'geyser', mesh: gy.group, s0: s - 0.9, s1: s + 0.9, x0: lane * LANE_W - 0.9, x1: lane * LANE_W + 0.9, y0: 0, y1: 20 });
-        col.active = false;
-        seg.geysers.push({ ...gy, collider: col, phase: rng() * 3, period: 2.8, lane, s, erupting: false });
-      }
-    }
-    return ev;
+    const way = OBSTACLES[type].place({ track: this, seg, s, rng, diff });
+    return { s, type, free: [-1, 0, 1], blocked: [], ...way };
   }
 
   addPickup(seg, type, x, y, s) {
@@ -389,9 +257,7 @@ export class Track {
       const [a, b] = intervals[Math.floor(rng() * intervals.length)];
       const s = (a + b) / 2;
       const lane = Math.floor(rng() * 3) - 1;
-      const r = rng();
-      const type = r < 0.16 ? 'shield' : r < 0.38 ? 'thumper' : r < 0.54 ? 'hooks' : r < 0.64 ? 'thopter'
-        : r < 0.76 ? 'silence' : r < 0.88 ? 'seal' : 'rush';
+      const type = pickPowerup(rng);
       for (const p of seg.pickups) {
         if (Math.abs(p.s - s) < 3 && Math.abs(p.x - lane * LANE_W) < 0.5) { p.taken = true; p.mesh.visible = false; }
       }
@@ -742,13 +608,8 @@ export class Track {
         gy.wasActive = active;
       }
       for (const a of seg.animated) {
-        if (a.type === 'devil') {
-          const x = Math.sin(time * a.speed + a.phase) * LANE_W * 1.2;
-          a.mesh.position.x = x;
-          a.mesh.rotation.y += dt * 7;
-          a.col.x0 = x - 0.95;
-          a.col.x1 = x + 0.95;
-        } else if (a.type === 'harvester') a.update(dt);
+        if (OBSTACLES[a.type]?.animate) OBSTACLES[a.type].animate(a, time, dt);
+        else if (a.type === 'harvester') a.update(dt);
         else if (a.type === 'thumper') a.head.position.y = 2.4 + Math.abs(Math.sin(time * 4 + a.phase)) * 0.35;
       }
     }

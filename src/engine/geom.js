@@ -91,7 +91,7 @@ export function lathe(profile, seg = 24) {
 }
 
 function prep(geo, color, matrix) {
-  let g = geo.index ? geo.toNonIndexed() : geo.clone();
+  const g = geo.index ? geo.toNonIndexed() : geo.clone();
   if (matrix) g.applyMatrix4(matrix);
   for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'color') g.deleteAttribute(k);
   if (!g.attributes.normal) g.computeVertexNormals();

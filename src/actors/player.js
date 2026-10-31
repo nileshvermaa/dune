@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { damp } from './noise.js';
-import { limb, lathe, rbox, M, merge, displace } from './geom.js';
-import { makeHookProp } from './props.js';
+import { damp } from '../engine/noise.js';
+import { limb, lathe, rbox, M, merge, displace } from '../engine/geom.js';
+import { makeHookProp } from '../world/props.js';
 
 // Fremen runner: tapered anatomy, ribbed stillsuit, harness and belt kit, hood and mantle with
 // breathing tubes. A gait-cycle animator drives the skeleton; the cloak and scarf tails are

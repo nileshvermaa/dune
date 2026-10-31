@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { tex } from './props.js';
-import { smoothstep } from './noise.js';
-import { SAND_BED } from './terrain.js';
+import { tex } from '../world/props.js';
+import { smoothstep } from '../engine/noise.js';
+import { SAND_BED } from '../world/terrain.js';
 
 // worm heights below were tuned against a sand bed 2.6 m under the old causeway
 const BED = SAND_BED + 2.6;

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { createNoise2D, smoothstep, hash2, mulberry32 } from './noise.js';
+import { createNoise2D, smoothstep, hash2, mulberry32 } from '../engine/noise.js';
 import { tex, makeRock, makeWormSkeleton, makeStoneCircle, makeSietch } from './props.js';
-import { detailed } from './materials.js';
+import { detailed } from '../engine/materials.js';
 
 // Infinite dune field streamed in chunks around the player.
 // Dunes flatten into a packed-sand trail along the path so it always reads clearly.

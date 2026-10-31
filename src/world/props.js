@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createNoise3D, fbm3, mulberry32, smoothstep } from './noise.js';
-import { createSandTextures, createStoneTextures, createGlowTexture, createArrowTexture } from './textures.js';
-import { detailed } from './materials.js';
-import { M, rbox, radialSurface, lathe, merge, shade, displace, col } from './geom.js';
+import { createNoise3D, fbm3, mulberry32, smoothstep } from '../engine/noise.js';
+import { createSandTextures, createStoneTextures, createGlowTexture, createArrowTexture } from '../engine/textures.js';
+import { detailed } from '../engine/materials.js';
+import { M, rbox, radialSurface, lathe, merge, shade, displace, col } from '../engine/geom.js';
 
 // Props are built as single merged meshes with baked vertex colours (strata, grime, AO)
 // and rendered with world-space stone detail. Geometry is cached per variant.
@@ -665,11 +665,13 @@ export function makePowerup(type) {
       [new THREE.OctahedronGeometry(0.16, 0), null, M(-0.2, -0.14, -0.04, 0, 0, -0.5, 0.7, 1.3, 0.7)],
     ])), mats.rushPU);
     halo = new THREE.Sprite(mats.rushHalo);
-  } else {
+  } else if (type === 'thopter') {
     const t = makeOrnithopter(0.16, true);
     core = t.group;
     g.userData.thopter = t;
     halo = new THREE.Sprite(mats.thopterHalo);
+  } else {
+    throw new Error(`makePowerup: no model for '${type}' (add a branch here; see content/powerups.js)`);
   }
   halo.scale.setScalar(2.6);
   g.add(core, halo);

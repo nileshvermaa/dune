@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { smoothstep, lerp } from './noise.js';
+import { smoothstep, lerp } from '../engine/noise.js';
 
 // Sky dome with day/night cycle, sun, two moons and stars; drives lights and fog.
 

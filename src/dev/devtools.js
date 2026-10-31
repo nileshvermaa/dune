@@ -1,7 +1,7 @@
 // Dev-only helpers (never bundled in production): an autopilot and a fast-forward used for
 // playtesting layouts and capturing screenshots of each biome.
 
-import { photoUniforms } from './materials.js';
+import { photoUniforms } from '../engine/materials.js';
 
 export function attachDevtools(g) {
   const bot = () => {

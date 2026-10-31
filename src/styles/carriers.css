@@ -1,0 +1,81 @@
+/* =====================================================================
+   The carriers: picker on the title, the character screen, the ability button.
+   ===================================================================== */
+
+.carrier-pick { margin-top: 16px; display: inline-flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 16px; background: rgba(20, 8, 2, 0.25); border: 1px solid rgba(255, 243, 228, 0.28); color: var(--cream); cursor: pointer; font-size: 11px; letter-spacing: 0.4em; text-transform: uppercase; opacity: 0; animation: rise 1.2s cubic-bezier(0.2, 0.7, 0.2, 1) 1.65s forwards; }
+.carrier-pick span { color: var(--peach); }
+.carrier-pick b { font-weight: 400; letter-spacing: 0.25em; }
+.carrier-pick i { font-style: normal; font-size: 16px; letter-spacing: 0; }
+.carrier-pick:hover { border-color: rgba(255, 243, 228, 0.7); }
+
+#chars { background: linear-gradient(180deg, rgba(20, 8, 2, 0.55) 0%, rgba(20, 8, 2, 0) 26%, rgba(20, 8, 2, 0) 44%, rgba(20, 8, 2, 0.82) 70%, rgba(20, 8, 2, 0.94) 100%); }
+.chars-head { position: absolute; left: 48px; top: max(28px, env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 10px; text-shadow: var(--shadow); }
+.chars-head h2 { margin: 0; font-size: 30px; font-weight: 200; letter-spacing: 0.45em; text-transform: uppercase; }
+.chars-bank { font-size: 11px; letter-spacing: 0.35em; text-transform: uppercase; color: var(--cream-dim); display: flex; gap: 12px; align-items: center; }
+.chars-bank b { font-weight: 400; color: var(--cream); letter-spacing: 0.12em; }
+.chars-list { position: absolute; left: 48px; right: 48px; bottom: 92px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+.char-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px 16px 14px; background: rgba(30, 14, 6, 0.55); border: 1px solid rgba(255, 243, 228, 0.18); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); cursor: pointer; transition: border-color 0.25s, transform 0.25s, background 0.25s; outline: none; opacity: 0; animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards; }
+.char-card:nth-child(2) { animation-delay: 0.06s; } .char-card:nth-child(3) { animation-delay: 0.12s; }
+.char-card:nth-child(4) { animation-delay: 0.18s; } .char-card:nth-child(5) { animation-delay: 0.24s; }
+.char-card:hover, .char-card:focus-visible { border-color: rgba(255, 243, 228, 0.6); transform: translateY(-4px); background: rgba(40, 18, 8, 0.7); }
+.char-card.selected { border-color: var(--peach); box-shadow: 0 0 24px rgba(255, 190, 120, 0.18); }
+.char-card.locked { background: rgba(14, 8, 4, 0.6); }
+.char-card.locked .char-name, .char-card.locked dl { opacity: 0.7; }
+.char-card header { display: flex; flex-direction: column; gap: 4px; }
+.char-role { font-size: 10px; letter-spacing: 0.45em; text-transform: uppercase; color: var(--peach); }
+.char-name { font-size: 22px; font-weight: 200; letter-spacing: 0.3em; text-transform: uppercase; }
+.char-lockicon { position: absolute; right: 14px; top: 12px; font-style: normal; color: var(--peach); font-size: 16px; }
+.char-blurb { margin: 0; font-size: 12px; line-height: 1.5; color: var(--cream-dim); }
+.char-card dl { margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; line-height: 1.45; }
+.char-card dt { font-size: 9px; letter-spacing: 0.4em; text-transform: uppercase; color: rgba(255, 226, 198, 0.6); margin-top: 6px; }
+.char-card dd { margin: 0; color: var(--cream); }
+.char-card dd b { font-weight: 500; }
+.char-pick, .char-buy { margin-top: auto; min-height: 40px; padding: 0 10px; background: transparent; border: 1px solid rgba(255, 243, 228, 0.55); color: var(--cream); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; cursor: pointer; }
+.char-pick:disabled { border-color: var(--peach); color: var(--peach); cursor: default; }
+.char-buy { border-color: #f0b483; color: #ffd3a6; }
+.char-buy:disabled { opacity: 0.35; cursor: not-allowed; }
+.char-lock { margin-top: auto; display: flex; flex-direction: column; gap: 8px; font-size: 11px; color: var(--cream-dim); }
+.char-bar { height: 2px; background: rgba(255, 243, 228, 0.18); }
+.char-bar i { display: block; height: 2px; background: var(--peach); }
+#chars-back { position: absolute; left: 48px; bottom: max(28px, env(safe-area-inset-bottom)); min-height: 44px; padding: 0 32px; font-size: 11px; }
+
+/* the ability: fills as it recharges, glows when ready */
+#ability-btn { pointer-events: auto; position: absolute; right: 48px; bottom: max(108px, calc(env(safe-area-inset-bottom) + 84px)); min-height: 44px; min-width: 180px; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 0 16px; overflow: hidden; background: rgba(20, 8, 2, 0.45); border: 1px solid rgba(255, 243, 228, 0.35); color: var(--cream-dim); cursor: pointer; text-shadow: none; font-size: 11px; font-weight: 500; letter-spacing: 0.3em; text-transform: uppercase; }
+#ability-btn span, #ability-btn kbd { position: relative; }
+#ability-btn kbd { margin: 0; }
+.ability-fill { position: absolute; inset: 0; transform-origin: left; background: rgba(255, 210, 160, 0.16); transition: transform 0.2s linear; }
+#ability-btn.ready { color: #3a1206; background: var(--peach); border-color: var(--peach); animation: abilityReady 1.6s ease-in-out infinite; }
+#ability-btn.ready .ability-fill { background: transparent; }
+#ability-btn.ready kbd { border-color: rgba(58, 18, 6, 0.5); color: #3a1206; }
+@keyframes abilityReady { 0%, 100% { box-shadow: 0 0 0 rgba(255, 200, 140, 0); } 50% { box-shadow: 0 0 22px rgba(255, 200, 140, 0.5); } }
+#app.cinema #ability-btn { opacity: 0; }
+
+@media (max-width: 1100px) {
+  .chars-list { grid-template-columns: repeat(3, minmax(0, 1fr)); bottom: 84px; max-height: 58vh; overflow-y: auto; }
+}
+@media (max-width: 700px) {
+  .chars-head { left: 20px; top: max(20px, env(safe-area-inset-top)); }
+  .chars-head h2 { font-size: 22px; letter-spacing: 0.35em; }
+  .chars-list { left: 0; right: 0; bottom: 84px; display: flex; gap: 12px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; padding: 0 20px 6px; max-height: none; touch-action: pan-x; }
+  .char-card { flex: 0 0 78vw; scroll-snap-align: center; max-height: 52vh; overflow-y: auto; }
+  #chars-back { left: 20px; right: 20px; width: auto; }
+  #chars { touch-action: pan-x; }
+  #ability-btn { right: 20px; bottom: max(108px, calc(env(safe-area-inset-bottom) + 92px)); min-width: 156px; min-height: 48px; }
+  .carrier-pick { font-size: 10px; letter-spacing: 0.3em; }
+}
+
+/* compact cards on wide screens so the carrier on show stays in view */
+@media (min-width: 701px) {
+  .char-blurb { display: none; }
+  .char-card { padding: 12px 14px 12px; gap: 6px; }
+  .char-card dl { font-size: 11px; line-height: 1.4; }
+  .char-card dt { margin-top: 3px; }
+  .char-name { font-size: 19px; }
+  .chars-list { bottom: 84px; }
+}
+
+/* phones: room for the ability button between the thumper and the wormsign bar */
+@media (max-width: 700px) {
+  #worm-meter { bottom: max(176px, calc(env(safe-area-inset-bottom) + 160px)); }
+  #narration, #app:not(.cinema) #narration { bottom: 236px; }
+}

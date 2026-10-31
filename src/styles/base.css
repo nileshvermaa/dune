@@ -1,0 +1,63 @@
+/* Design tokens, reset, full-frame overlays, letterbox bars and buttons. */
+
+:root {
+  --font: 'Jost', 'Segoe UI', sans-serif;
+  --cream: #fff3e4;
+  --cream-dim: #ffe2c6;
+  --peach: #ffd3a6;
+  --water: #bfe6ff;
+  --ember: #b4441a;
+  --line: rgba(255, 243, 228, 0.35);
+  --shadow: 0 1px 2px rgba(20, 6, 0, 0.9), 0 0 14px rgba(20, 6, 0, 0.55);
+  --bar: 11.5vh;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #2a1007;
+  color: var(--cream);
+  font-family: var(--font);
+  font-weight: 300;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+#app { position: fixed; inset: 0; }
+#app canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hidden { display: none !important; }
+button { font-family: var(--font); color: inherit; }
+button:focus-visible { outline: 1px solid var(--cream); outline-offset: 3px; }
+
+#vignette, #tint, #flash, #danger, #dusk { position: absolute; inset: 0; pointer-events: none; }
+#vignette { background: radial-gradient(ellipse at center, transparent 55%, rgba(30, 8, 0, 0.5) 100%); }
+#tint { opacity: 0; transition: opacity 0.4s; mix-blend-mode: color; }
+#flash { opacity: 0; background: #fff; }
+/* red glow rising from the bottom of the frame as wormsign grows */
+#danger { opacity: 0; box-shadow: inset 0 -26vh 20vh -8vh rgba(90, 10, 0, 0.9); transition: opacity 0.3s; }
+/* mauve-to-amber dusk wash behind chapter cards */
+#dusk { opacity: 0; background: linear-gradient(180deg, rgba(62, 42, 51, 0.85) 0%, rgba(154, 94, 74, 0.45) 50%, rgba(226, 160, 112, 0.35) 78%, rgba(241, 196, 140, 0.4) 100%); transition: opacity 1.2s; }
+#app.chaptering #dusk { opacity: 1; }
+
+/* letterbox bars */
+#letterbox i { position: absolute; left: 0; right: 0; height: 0; background: #000; z-index: 4; pointer-events: none; transition: height 1.1s cubic-bezier(0.6, 0, 0.2, 1); }
+#letterbox .lb-top { top: 0; }
+#letterbox .lb-bottom { bottom: 0; }
+#app.cinema #letterbox i { height: var(--bar); }
+#app.cinema .hud-left, #app.cinema .hud-right, #app.cinema #pause-btn, #app.cinema #stride { opacity: 0; }
+
+kbd { font-family: var(--font); font-weight: 400; font-size: 11px; display: inline-block; min-width: 22px; padding: 2px 7px; margin-right: 10px; border: 1px solid var(--line); text-align: center; letter-spacing: 0.05em; }
+.eyebrow { font-size: 11px; font-weight: 400; letter-spacing: 0.7em; margin-right: -0.7em; text-transform: uppercase; }
+.saying { margin: 0; font-size: 13px; font-weight: 300; letter-spacing: 0.12em; }
+
+/* buttons */
+.btn-line, .btn-ghost, .btn-solid { cursor: pointer; text-transform: uppercase; border-radius: 0; min-height: 48px; transition: background 0.2s, color 0.2s; }
+.btn-line { padding: 0 48px; border: 1px solid rgba(255, 243, 228, 0.8); background: transparent; color: var(--cream); font-size: 13px; font-weight: 400; letter-spacing: 0.55em; }
+.btn-line:hover { background: rgba(255, 243, 228, 0.12); }
+.btn-ghost { min-height: 40px; padding: 0 16px; border: 1px solid rgba(255, 243, 228, 0.25); background: transparent; font-size: 11px; font-weight: 400; letter-spacing: 0.4em; }
+.btn-ghost:hover { border-color: rgba(255, 243, 228, 0.6); }
+.btn-solid { padding: 0 44px; border: none; background: #141210; color: #f2efe9; font-size: 12px; font-weight: 400; letter-spacing: 0.55em; }
+.btn-solid:hover { background: #000; }
