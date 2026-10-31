@@ -34,7 +34,7 @@ export class Terrain {
       normalScale: new THREE.Vector2(0.7, 0.7),
       roughness: 1,
       metalness: 0,
-    }), { scale: 0.035, strength: 0.18, bump: 0, sparkle: 1.4 });
+    }), { scale: 0.035, strength: 0.18, bump: 0, sparkle: 1.4, photo: { set: 'sand', scale: 0.3, mix: 0.85, chroma: 0.4, bump: 1.4 } });
     const idx = new Uint16Array(RES * RES * 6);
     let k = 0;
     for (let j = 0; j < RES; j++) {

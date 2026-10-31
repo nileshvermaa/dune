@@ -67,6 +67,62 @@ export function getDetailTexture() {
   return t;
 }
 
+/* ---- photo-scanned surface sets (CC0, Poly Haven; see public/textures/CREDITS.md) ----
+   Sampled in world space like the procedural detail. Colour is applied relative to the
+   photo's mean so it adds grain and variation without shifting the game's palette. */
+const PHOTO = {
+  sand: { mean: [0.422, 0.378, 0.31], lum: 0.383 },
+  sandstone: { mean: [0.82, 0.632, 0.453], lum: 0.668 },
+  rock: { mean: [0.293, 0.269, 0.175], lum: 0.266 },
+};
+export const photoUniforms = {}; // exported for devtools comparisons
+function solid(r, g, b) {
+  const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1, THREE.RGBAFormat);
+  t.needsUpdate = true;
+  return t;
+}
+function photoSet(name) {
+  if (!photoUniforms[name]) {
+    const m = PHOTO[name].mean;
+    photoUniforms[name] = {
+      map: { value: solid(m[0] * 255, m[1] * 255, m[2] * 255) },
+      nor: { value: solid(128, 128, 255) },
+      mean: { value: new THREE.Vector3(...m) },
+      lum: { value: PHOTO[name].lum },
+      on: { value: 0 },
+    };
+  }
+  return photoUniforms[name];
+}
+
+// Load every photo set in the background; each fades in once both of its maps arrive.
+export function loadPhotoTextures(renderer) {
+  const loader = new THREE.TextureLoader();
+  const aniso = renderer ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 4;
+  const sets = Object.keys(PHOTO).map((name) => {
+    const u = photoSet(name);
+    const load = (file) => new Promise((resolve, reject) => {
+      loader.load(`/textures/${file}`, (t) => {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.colorSpace = THREE.NoColorSpace; // used as relative detail, not as final albedo
+        t.anisotropy = aniso;
+        resolve(t);
+      }, undefined, reject);
+    });
+    return Promise.all([load(`${name}_diff.webp`), load(`${name}_nor.webp`)]).then(([map, nor]) => {
+      u.map.value = map;
+      u.nor.value = nor;
+      u.loaded = true;
+    });
+  });
+  return Promise.allSettled(sets);
+}
+
+// call each frame: eases loaded sets in so the swap never pops
+export function updatePhotoTextures(dt) {
+  for (const u of Object.values(photoUniforms)) if (u.loaded && !u.held && u.on.value < 1) u.on.value = Math.min(1, u.on.value + dt * 1.5);
+}
+
 const VERT_DECL = /* glsl */ `
 varying vec3 vTpPos;
 varying vec3 vTpN;
@@ -98,6 +154,58 @@ float tpSample(float s) {
        + texture2D(uTpTex, vTpPos.xy * s).r * bw.z;
 }
 float tpHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+#ifdef USE_PHOTO
+uniform sampler2D uPhMap;
+uniform sampler2D uPhNor;
+uniform vec3 uPhMean;
+uniform float uPhLum;
+uniform float uPhOn;
+uniform float uPhScale;
+uniform float uPhMix;
+uniform float uPhChroma;
+uniform float uPhBump;
+vec3 phWeights() { vec3 bw = pow(abs(normalize(vTpN)), vec3(4.0)); return bw / dot(bw, vec3(1.0)); }
+vec3 phColor(float s) {
+  vec3 bw = phWeights();
+  return texture2D(uPhMap, vTpPos.zy * s).rgb * bw.x
+       + texture2D(uPhMap, vTpPos.xz * s).rgb * bw.y
+       + texture2D(uPhMap, vTpPos.xy * s).rgb * bw.z;
+}
+#endif
+`;
+const FRAG_PHOTO_ALBEDO = /* glsl */ `
+#ifdef USE_PHOTO
+{
+  // a second, larger scale breaks up the tiling; detail is relative to the photo's mean
+  vec3 p1 = phColor(uPhScale), p2 = phColor(uPhScale * 0.29);
+  vec3 r1 = mix(vec3(dot(p1, vec3(0.299, 0.587, 0.114)) / uPhLum), p1 / uPhMean, uPhChroma);
+  vec3 r2 = mix(vec3(dot(p2, vec3(0.299, 0.587, 0.114)) / uPhLum), p2 / uPhMean, uPhChroma);
+  vec3 rel = 1.0 + (r1 - 1.0) * 0.75 + (r2 - 1.0) * 0.45;
+  diffuseColor.rgb *= mix(vec3(1.0), clamp(rel, 0.25, 1.9), uPhMix * uPhOn);
+}
+#endif
+`;
+const FRAG_PHOTO_NORMAL = /* glsl */ `
+#ifdef USE_PHOTO
+{
+  float phFade = (1.0 - smoothstep(25.0, 90.0, length(vViewPosition))) * uPhOn * uPhBump;
+  if (phFade > 0.0) {
+    // triplanar normal mapping ("whiteout" blend) in world space, then into view space
+    vec3 wn = normalize(vTpN);
+    vec3 bw = phWeights();
+    vec3 tx = texture2D(uPhNor, vTpPos.zy * uPhScale).xyz * 2.0 - 1.0;
+    vec3 ty = texture2D(uPhNor, vTpPos.xz * uPhScale).xyz * 2.0 - 1.0;
+    vec3 tz = texture2D(uPhNor, vTpPos.xy * uPhScale).xyz * 2.0 - 1.0;
+    tx = vec3(tx.xy + wn.zy, abs(tx.z) * wn.x);
+    ty = vec3(ty.xy + wn.xz, abs(ty.z) * wn.y);
+    tz = vec3(tz.xy + wn.xy, abs(tz.z) * wn.z);
+    vec3 pn = normalize(tx.zyx * bw.x + ty.xzy * bw.y + tz.xyz * bw.z);
+    pn = normalize(mix(wn, pn, phFade));
+    vec3 dv = (viewMatrix * vec4(pn, 0.0)).xyz - (viewMatrix * vec4(wn, 0.0)).xyz;
+    normal = normalize(normal + dv);
+  }
+}
+#endif
 `;
 const FRAG_ALBEDO = /* glsl */ `
 float tpH = tpSample(uTpScale);
@@ -126,24 +234,35 @@ if (uTpSparkle > 0.0) {
 }
 `;
 
-export function detailed(material, { scale = 0.6, strength = 0.35, bump = 0.6, sparkle = 0 } = {}) {
+// photo: optional { set: 'sand'|'sandstone'|'rock', scale (1/metres), mix, chroma, bump }
+export function detailed(material, { scale = 0.6, strength = 0.35, bump = 0.6, sparkle = 0, photo = null } = {}) {
   const tex = getDetailTexture();
   material.userData.tp = { scale, strength, bump, sparkle };
+  const ph = photo && photoSet(photo.set);
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTpTex = { value: tex };
     shader.uniforms.uTpScale = { value: scale };
     shader.uniforms.uTpStrength = { value: strength };
     shader.uniforms.uTpBump = { value: bump };
     shader.uniforms.uTpSparkle = { value: sparkle };
+    let frag = FRAG_DECL;
+    if (ph) {
+      frag = '#define USE_PHOTO\n' + frag;
+      Object.assign(shader.uniforms, {
+        uPhMap: ph.map, uPhNor: ph.nor, uPhMean: ph.mean, uPhLum: ph.lum, uPhOn: ph.on,
+        uPhScale: { value: photo.scale ?? 0.5 }, uPhMix: { value: photo.mix ?? 0.6 },
+        uPhChroma: { value: photo.chroma ?? 0.3 }, uPhBump: { value: photo.bump ?? 0.8 },
+      });
+    }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_DECL)
       .replace('#include <project_vertex>', '#include <project_vertex>\n' + VERT_BODY);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + FRAG_DECL)
-      .replace('#include <map_fragment>', '#include <map_fragment>\n' + FRAG_ALBEDO)
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + FRAG_NORMAL)
+      .replace('#include <common>', '#include <common>\n' + frag)
+      .replace('#include <map_fragment>', '#include <map_fragment>\n' + FRAG_ALBEDO + (ph ? FRAG_PHOTO_ALBEDO : ''))
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + FRAG_NORMAL + (ph ? FRAG_PHOTO_NORMAL : ''))
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + FRAG_SPARKLE);
   };
-  material.customProgramCacheKey = () => 'tp1';
+  material.customProgramCacheKey = () => (ph ? 'tp2-' + photo.set : 'tp1');
   return material;
 }

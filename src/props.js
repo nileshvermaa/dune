@@ -34,12 +34,12 @@ export function initProps() {
     arrow: createArrowTexture(256),
   });
 
-  mats.stoneV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86 }), { scale: 0.3, strength: 0.14, bump: 0.22 });
-  mats.rock = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94 }), { scale: 0.12, strength: 0.28, bump: 0.5 });
-  mats.tile = detailed(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8 }), { scale: 0.3, strength: 0.16, bump: 0.3 });
-  mats.wall = detailed(new THREE.MeshStandardMaterial({ map: tex.stone.map, normalMap: tex.stone.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.9, color: '#e8cfae' }), { scale: 0.3, strength: 0.12, bump: 0.2 });
+  mats.stoneV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86 }), { scale: 0.3, strength: 0.08, bump: 0.1, photo: { set: 'sandstone', scale: 0.4, mix: 0.9, chroma: 0.3, bump: 1.6 } });
+  mats.rock = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94 }), { scale: 0.12, strength: 0.2, bump: 0.3, photo: { set: 'rock', scale: 0.1, mix: 0.9, chroma: 0, bump: 1.8 } });
+  mats.tile = detailed(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8 }), { scale: 0.3, strength: 0.1, bump: 0.15, photo: { set: 'sandstone', scale: 0.45, mix: 0.8, chroma: 0.25, bump: 1.4 } });
+  mats.wall = detailed(new THREE.MeshStandardMaterial({ map: tex.stone.map, normalMap: tex.stone.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.9, color: '#e8cfae' }), { scale: 0.3, strength: 0.12, bump: 0.2, photo: { set: 'sandstone', scale: 0.45, mix: 0.6, chroma: 0.2, bump: 1.0 } });
   mats.mortar = new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 1 });
-  mats.sandPile = detailed(new THREE.MeshStandardMaterial({ color: '#c9935f', roughness: 1, metalness: 0 }), { scale: 0.9, strength: 0.25, bump: 0.6, sparkle: 1.0 });
+  mats.sandPile = detailed(new THREE.MeshStandardMaterial({ color: '#c9935f', roughness: 1, metalness: 0 }), { scale: 0.9, strength: 0.25, bump: 0.6, sparkle: 1.0, photo: { set: 'sand', scale: 0.3, mix: 0.8, chroma: 0.4, bump: 1.2 } });
   mats.boneV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.02 }), { scale: 1.0, strength: 0.12, bump: 0.2 });
   mats.metalV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.7 }), { scale: 0.8, strength: 0.15, bump: 0.12 });
   mats.glass = new THREE.MeshPhysicalMaterial({ color: '#16222e', roughness: 0.05, metalness: 0.2, clearcoat: 1, emissive: '#0b2233', emissiveIntensity: 0.5 });

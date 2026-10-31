@@ -18,6 +18,7 @@ import { Input } from './input.js';
 import { ZONES, zoneAt, distToZone } from './zones.js';
 import { PROLOGUE, BEATS, DEATHS, chapterFor, roman, saying } from './story.js';
 import { makeThumper } from './props.js';
+import { loadPhotoTextures, updatePhotoTextures } from './materials.js';
 
 const ZONE_LABELS = ['Erg', 'Wall', 'Sietch', 'Spice', 'Storm'];
 
@@ -88,6 +89,7 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 3000);
 
     initProps();
+    loadPhotoTextures(this.renderer);
     this.terrain = new Terrain(this.scene, []);
     this.track = new Track(this.scene, this.terrain);
     this.sky = new Sky(this.scene);
@@ -1219,6 +1221,7 @@ export class Game {
     dt = Math.min(dt, 0.05);
     const st = this.state;
     if (st !== 'paused') this.time += dt;
+    updatePhotoTextures(dt);
     const p = this.p;
 
     if (st === 'running') this.updateRun(dt);

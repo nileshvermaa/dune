@@ -1,6 +1,8 @@
 // Dev-only helpers (never bundled in production): an autopilot and a fast-forward used for
 // playtesting layouts and capturing screenshots of each biome.
 
+import { photoUniforms } from './materials.js';
+
 export function attachDevtools(g) {
   const bot = () => {
     const p = g.p, seg = p.seg;
@@ -86,5 +88,14 @@ export function attachDevtools(g) {
     return mode;
   };
 
-  Object.assign(window, { __game: g, __bot: bot, __sim: sim, __studio: studio });
+  // toggle the photo-scanned surface detail for before/after comparisons
+  const photos = (on) => {
+    for (const u of Object.values(photoUniforms)) {
+      u.held = !on; // stop the loader's fade-in from switching them straight back on
+      u.on.value = on ? 1 : 0;
+    }
+    return on;
+  };
+
+  Object.assign(window, { __game: g, __bot: bot, __sim: sim, __studio: studio, __photos: photos });
 }
