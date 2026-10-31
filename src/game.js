@@ -56,13 +56,45 @@ const SHIMMER = {
     }`,
 };
 
+// Crepuscular rays: march from each pixel toward the sun's screen position, gathering the
+// bright sky near the sun, so dunes, ruins and the runner cut shafts through the haze.
+const SUNSHAFTS = {
+  uniforms: { tDiffuse: { value: null }, uSun: { value: new THREE.Vector2(0.5, 0.7) }, uStrength: { value: 0 }, uColor: { value: new THREE.Color(1, 0.8, 0.55) } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform vec2 uSun; uniform float uStrength; uniform vec3 uColor; varying vec2 vUv;
+    float bright(vec2 uv) {
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      float l = dot(c, vec3(0.299, 0.587, 0.114));
+      return smoothstep(0.85, 2.0, l) * exp(-length((uv - uSun) * vec2(1.6, 1.0)) * 2.2);
+    }
+    void main() {
+      vec4 base = texture2D(tDiffuse, vUv);
+      if (uStrength <= 0.001) { gl_FragColor = base; return; }
+      vec2 step = (vUv - uSun) / 40.0 * 0.9;
+      vec2 uv = vUv;
+      float decay = 1.0, acc = 0.0;
+      float dither = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
+      uv -= step * dither;
+      for (int i = 0; i < 40; i++) {
+        uv -= step;
+        acc += bright(uv) * decay;
+        decay *= 0.955;
+      }
+      gl_FragColor = vec4(base.rgb + uColor * acc * (uStrength / 40.0) * 5.0, base.a);
+    }`,
+};
+
 const GRADE = {
   uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 1 }, uNight: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float uTime; uniform float uWarm; uniform float uNight; varying vec2 vUv;
     void main() {
-      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      // faint lens fringing toward the frame edges
+      vec2 dc = vUv - 0.5;
+      float ca = dot(dc, dc) * 0.006;
+      vec3 c = vec3(texture2D(tDiffuse, vUv + dc * ca).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - dc * ca).b);
       c = mix(c, c * c * (3.0 - 2.0 * c), 0.28);
       float l = dot(c, vec3(0.299, 0.587, 0.114));
       vec3 mono = l * mix(vec3(1.08, 0.96, 0.8), vec3(0.78, 0.9, 1.08), uNight);
@@ -257,15 +289,28 @@ export class Game {
     this.terrain.radius = high ? 430 : 300;
     this.track.ahead = high ? 650 : 480;
     if (high && !this.composer) {
-      this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      const w = window.innerWidth, h = window.innerHeight;
+      this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType }));
+      // the plain render pass draws until N8AO (loaded on demand: it is large) takes over
+      this.renderPass = new RenderPass(this.scene, this.camera);
+      this.composer.addPass(this.renderPass);
+      this.loadAO(w, h);
       this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.9);
       this.composer.addPass(this.bloom);
       this.shimmer = new ShaderPass(SHIMMER);
       this.composer.addPass(this.shimmer);
+      this.shafts = new ShaderPass(SUNSHAFTS);
+      this.composer.addPass(this.shafts);
       this.composer.addPass(new OutputPass());
       this.grade = new ShaderPass(GRADE);
       this.composer.addPass(this.grade);
+      // anti-aliasing: the canvas's own MSAA does not survive a post chain (loaded on demand)
+      import('three/addons/postprocessing/SMAAPass.js').then(({ SMAAPass }) => {
+        const pr = this.renderer.getPixelRatio();
+        this.smaa = new SMAAPass(window.innerWidth * pr, window.innerHeight * pr);
+        this.composer.addPass(this.smaa);
+      }).catch((err) => console.warn('SMAA unavailable', err));
+      this.perf = { avg: 16, slowFor: 0, step: 0 };
     }
     if (changed) {
       this.scene.traverse((o) => {
@@ -275,6 +320,53 @@ export class Game {
     }
     $('quality-btn').textContent = `Quality · ${high ? 'High' : 'Low'}`;
     this.app.classList.toggle('css-grade', !high);
+  }
+
+  // N8AO renders the scene and adds contact shadows where props meet the sand
+  loadAO(w, h) {
+    import('n8ao').then(({ N8AOPass }) => {
+      if (this.aoOff || !this.composer) return;
+      const ao = new N8AOPass(this.scene, this.camera, w, h);
+      Object.assign(ao.configuration, {
+        aoRadius: 4, distanceFalloff: 2, intensity: 5, halfRes: true, depthAwareUpsampling: true,
+        gammaCorrection: false, color: new THREE.Color(0.16, 0.08, 0.035),
+      });
+      ao.setQualityMode('Low');
+      this.composer.insertPass(ao, 0);
+      this.renderPass.enabled = false;
+      this.ao = ao;
+      this.resize();
+    }).catch((err) => console.warn('Ambient occlusion unavailable', err));
+  }
+
+  // aim the rays at the sun's place on screen; strongest low in the sky, gone at night and in storms
+  updateSunShafts(dt) {
+    if (!this.shafts || !this.shafts.enabled) return;
+    const sun = this.sky.uniforms.uSunDir.value;
+    const sp = (this._sunScreen || (this._sunScreen = new THREE.Vector3())).copy(sun).multiplyScalar(1000).add(this.camera.position).project(this.camera);
+    const inFront = sp.z < 1 ? 1 : 0;
+    const onScreen = 1 - smoothstep(0.85, 1.7, Math.max(Math.abs(sp.x), Math.abs(sp.y)));
+    const up = smoothstep(-0.04, 0.06, sun.y);
+    const low = 1 - smoothstep(0.25, 0.75, sun.y);
+    const want = inFront * onScreen * up * (0.7 + 0.9 * low) * (1 - this.atmo.haze * 0.85);
+    const u = this.shafts.uniforms;
+    u.uSun.value.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5);
+    u.uStrength.value = damp(u.uStrength.value, want, 3, dt);
+    u.uColor.value.copy(this.sky.uniforms.uSunColor.value);
+  }
+
+  // If high quality can't hold its frame rate, shed cost in steps: AO, then resolution, then rays.
+  governPerformance(rawDt) {
+    const pf = this.perf;
+    if (!pf || this.quality !== 'high' || pf.hold || this.state !== 'running' || document.hidden || rawDt > 0.25) return;
+    pf.avg += (rawDt * 1000 - pf.avg) * 0.05;
+    pf.slowFor = pf.avg > 24 ? pf.slowFor + rawDt : Math.max(0, pf.slowFor - rawDt * 0.5);
+    if (pf.slowFor < 3 || pf.step >= 3) return;
+    pf.step++;
+    pf.slowFor = 0;
+    if (pf.step === 1) { if (this.ao) this.ao.enabled = false; this.renderPass.enabled = true; this.aoOff = true; }
+    else if (pf.step === 2) { this.renderer.setPixelRatio(1); this.resize(); }
+    else this.shafts.enabled = false;
   }
 
   resize() {
@@ -1221,6 +1313,7 @@ export class Game {
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (!(dt > 0)) dt = 0.016;
+    this.governPerformance(dt);
     dt = Math.min(dt, 0.05);
     const st = this.state;
     if (st !== 'paused') this.time += dt;
@@ -1285,6 +1378,7 @@ export class Game {
       this.shimmer.uniforms.uTime.value = this.time;
       this.shimmer.uniforms.uAmt.value = this.sky.uniforms.uDay.value * (1 - this.atmo.haze);
       this.grade.uniforms.uWarm.value = this.p.trance > 0 && this.state === 'running' ? -1 : 1;
+      this.updateSunShafts(dt);
     }
     if (this.composer && this.quality === 'high') this.composer.render();
     else this.renderer.render(this.scene, this.camera);
