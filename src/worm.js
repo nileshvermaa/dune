@@ -317,9 +317,24 @@ ChaserWorm.prototype.ride = function ride(dt, headDist, offset) {
   const m = this.model;
   m.group.visible = true;
   const pts = m.points;
+  // the body follows the path the head actually took: when the worm swings across the trail it
+  // snakes over, instead of the whole length sliding sideways at once
+  const hist = this.offHist || (this.offHist = []);
+  if (!hist.length || headDist < hist[hist.length - 1].d - 1) hist.length = 0;
+  if (!hist.length || headDist - hist[hist.length - 1].d > 0.5) hist.push({ d: headDist, off: offset });
+  else hist[hist.length - 1].off = offset;
+  while (hist.length > 2 && hist[1].d < headDist - m.count * m.segLen - 10) hist.shift();
+  const offAt = (d) => {
+    if (d >= hist[hist.length - 1].d) return offset;
+    for (let k = hist.length - 1; k > 0; k--) {
+      const a = hist[k - 1], b = hist[k];
+      if (d >= a.d) return a.off + (b.off - a.off) * ((d - a.d) / (b.d - a.d || 1));
+    }
+    return hist[0].off;
+  };
   for (let i = 0; i <= m.count; i++) {
     const d = headDist - i * m.segLen;
-    this.track.sample(d, offset + Math.sin(this.time * 0.9 + i * 0.22) * 0.5 * (i / m.count), pts[i]);
+    this.track.sample(d, offAt(d) + Math.sin(this.time * 0.9 + i * 0.22) * 0.5 * (i / m.count), pts[i]);
     pts[i].y = BED - 1.25 + Math.sin(this.time * 2.4 - i * 0.35) * 0.3 - Math.max(0, i - 18) * 0.4;
   }
   pts[0].y += 0.9;

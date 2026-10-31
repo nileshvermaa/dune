@@ -16,12 +16,13 @@ import { DustField, ParticlePool, StormWall, SandMound } from './effects.js';
 import { AudioEngine } from './audio.js';
 import { Input } from './input.js';
 import { ZONES, zoneAt, distToZone } from './zones.js';
-import { PROLOGUE, BEATS, DEATHS, chapterFor, roman, saying } from './story.js';
+import { BEATS, DEATHS, INTRO, chapterFor, roman, saying, waypointAt } from './story.js';
 import { makeThumper } from './props.js';
 import { loadPhotoTextures, updatePhotoTextures } from './materials.js';
 import { loadRunnerRig } from './rig.js';
 
 const ZONE_LABELS = ['Erg', 'Wall', 'Sietch', 'Spice', 'Storm'];
+const INTRO_SHOT = 4.6; // seconds per story card / camera shot in the opening
 // how much the land throws sound back: canyon walls and ruins echo, open sand swallows it
 const ROOM = { desert: 0.12, shieldwall: 0.65, ruins: 0.55, spice: 0.2, storm: 0.06 };
 
@@ -167,6 +168,7 @@ export class Game {
     this.atmo = { ...ZONES[0], tint: [...ZONES[0].tint] };
     this.time = 0;
     this.state = 'title';
+    this.breachTimer = 3;
     this.camYaw = 0;
     this.shake = 0;
     this.breachTimer = 4;
@@ -219,6 +221,8 @@ export class Game {
       narration: $('narration'), waterBar: $('water-bar'), visionFill: $('vision-fill'),
       thumpers: $('inv-thumper-count'), invThumper: $('inv-thumper'), invHooks: $('inv-hooks'), thumperBtn: $('thumper-btn'),
       qte: $('qte'), qteRing: $('qte-ring'), qteKey: $('qte-key'), qteLabel: $('qte-label'), qteDots: $('qte-dots'),
+      intro: $('intro'), introCard: $('intro-card'), introKicker: $('intro-kicker'), introLine: $('intro-line'), introDots: $('intro-dots'),
+      goal: $('hud-goal'),
       thumperBtnCount: $('thumper-btn-count'), hudChapter: $('hud-chapter'), waterPct: $('water-pct'), visionBar: $('vision-bar'),
       wormPct: $('worm-pct'), danger: $('danger'), stride: $('stride'), strideBars: $('stride-bars'), strideStatus: $('stride-status'),
     });
@@ -229,6 +233,7 @@ export class Game {
     ui.thumperBtn.addEventListener('touchend', (e) => e.stopPropagation());
     $('title-saying').textContent = `“${saying()}”`;
     $('play-btn').addEventListener('click', () => this.start());
+    $('intro-skip').addEventListener('click', (e) => { e.stopPropagation(); this.endIntro(); });
     $('play-btn-m').addEventListener('click', () => this.start());
     $('again-btn').addEventListener('click', () => this.start());
     $('menu-btn').addEventListener('click', () => this.toTitle());
@@ -248,6 +253,19 @@ export class Game {
     syncSound();
     this.refreshTitle();
     ui.last = {};
+    // ambient motion for the screens: dust in the pause light, sand sifting on the end screen
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    $('motes').innerHTML = Array.from({ length: 26 }, () =>
+      `<i style="left:${rnd(45, 100)}%;top:${rnd(10, 100)}%;animation-duration:${rnd(7, 15)}s;animation-delay:-${rnd(0, 15)}s;opacity:${rnd(0.3, 0.9)}"></i>`).join('');
+    $('sandfall').innerHTML = Array.from({ length: 40 }, () =>
+      `<i style="left:${rnd(0, 100)}%;animation-duration:${rnd(2.5, 6)}s;animation-delay:-${rnd(0, 6)}s;height:${rnd(8, 22)}px"></i>`).join('');
+    // the title's sayings drift past one after another
+    setInterval(() => {
+      if (this.state !== 'title') return;
+      const el = $('title-saying');
+      el.style.opacity = 0;
+      setTimeout(() => { el.textContent = `“${saying()}”`; el.style.opacity = 1; }, 800);
+    }, 9000);
   }
 
   refreshTitle() {
@@ -416,7 +434,7 @@ export class Game {
       water: 100, sign: 0, thumpers: 1, hooks: 0, vision: 0, ride: 0, rideOff: 0, lure: 0,
       lastBreak: -10, lastGap: 0, onSand: false, chapter: 0, visits: {}, beats: {},
       strides: [], rides: 0, journal: [],
-      silent: 0, seal: 0, rush: 0, qte: null, balanceT: 0, turnWarned: false,
+      silent: 0, seal: 0, rush: 0, qte: null, balanceT: 0, turnWarned: false, wp: 0,
     };
     for (const t of this.planted || []) this.scene.remove(t.group);
     this.planted = [];
@@ -431,22 +449,89 @@ export class Game {
     this.fresh = false;
     const p = this.p;
     p.s = 6;
-    this.state = 'running';
     this.save.played = (this.save.played || 0) + 1;
     this.tutorial = this.save.played <= 3;
     this.ui.title.classList.add('hidden');
     this.ui.over.classList.add('hidden');
-    this.cinema(false);
     this.ui.pause.classList.add('hidden');
+    this.thopter.group.visible = false;
+    // the first crossing of a visit opens on the story; later runs go straight in
+    if (!this.introSeen) return this.startIntro();
+    this.beginRun();
+  }
+
+  beginRun() {
+    this.state = 'running';
+    this.cinema(false);
     this.ui.hud.classList.remove('hidden');
     this.chapter(zoneAt(0).zone.id);
-    this.narrateQueue = [];
-    PROLOGUE.forEach((l, i) => setTimeout(() => this.state === 'running' && this.narrate(l, 5200), 600 + i * 5400));
-    this.cinema(true, 9000);
+    this.cinema(true, 2600);
     this.audio.braam(0.8);
     this.syncInventory();
     this.drawStride();
-    this.thopter.group.visible = false;
+    this.updateGoal();
+    setTimeout(() => this.state === 'running' && this.narrate(BEATS.setOut, 4200), 900);
+  }
+
+  /* ---------- the opening: why Ishra runs ---------- */
+
+  startIntro() {
+    this.state = 'intro';
+    this.introT = 0;
+    this.introIdx = -1;
+    this.ui.hud.classList.add('hidden');
+    this.ui.intro.classList.remove('hidden');
+    this.ui.introDots.innerHTML = INTRO.map(() => '<i></i>').join('');
+    this.cinema(true);
+    this.audio.braam(0.6);
+  }
+
+  updateIntro(dt) {
+    this.introT += dt;
+    const idx = Math.floor(this.introT / INTRO_SHOT);
+    if (idx >= INTRO.length) return this.endIntro();
+    if (idx !== this.introIdx) {
+      this.introIdx = idx;
+      const card = this.ui.introCard;
+      card.classList.remove('show');
+      void card.offsetWidth;
+      this.ui.introKicker.textContent = INTRO[idx].kicker;
+      this.ui.introLine.textContent = INTRO[idx].line;
+      card.classList.add('show');
+      [...this.ui.introDots.children].forEach((d, i) => d.classList.toggle('on', i <= idx));
+      if (idx === INTRO.length - 1) this.audio.braam(0.7);
+    }
+  }
+
+  endIntro() {
+    if (this.state !== 'intro') return;
+    this.introSeen = true;
+    this.ui.intro.classList.add('hidden');
+    this.ui.introCard.classList.remove('show');
+    this.beginRun();
+  }
+
+  // the next place the seed-water must reach, and how far off it is
+  updateGoal() {
+    const p = this.p;
+    const w = waypointAt(p.wp || 0);
+    const km = Math.max(0, (w.at - p.runDist) / 1000);
+    const left = km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+    this.setText('goal', this.ui.goal, `To ${w.name} · ${left}`);
+  }
+
+  reachWaypoint() {
+    const p = this.p;
+    const w = waypointAt(p.wp);
+    p.wp++;
+    p.water = 100;
+    p.score += 1000 * p.mult;
+    p.journal.push({ num: '◆', title: w.name.replace(/^the /, ''), line: w.line });
+    this.narrate(w.line, 5200);
+    this.toast(`Seed-water reached ${w.name}`);
+    this.audio.braam(0.9);
+    this.audio.powerup();
+    this.flash('#9fd8ff', 0.25);
   }
 
   pause() {
@@ -481,6 +566,10 @@ export class Game {
     const st = this.state;
     if (st === 'title') {
       if (a === 'confirm') this.start();
+      return;
+    }
+    if (st === 'intro') {
+      if (a === 'confirm' || a === 'pause') this.endIntro();
       return;
     }
     if (st === 'over') {
@@ -813,7 +902,10 @@ export class Game {
         if (p.balanceT <= 0) this.startQTE('balance');
       }
     }
-    p.rideOff = damp(p.rideOff, p.ride > 0 ? RIDE_OFFSET : 0, p.ride > 0 ? 1.6 : 3.2, dt);
+    // the ridden worm keeps to the outside of the coming bend: swinging wide round a corner is
+    // smooth, while an offset on the inside would fold back on itself and wrench the rider
+    const rideSide = p.seg.turn > 0 ? 1 : -1;
+    p.rideOff = damp(p.rideOff, p.ride > 0 ? RIDE_OFFSET * rideSide : 0, p.ride > 0 ? 1.15 : 3.2, dt);
 
     let seg = p.seg;
     // Corners must be turned by hand (a press toward the bend before it); riding the worm or
@@ -906,6 +998,8 @@ export class Game {
       p.zoneIndex = z.index;
       this.chapter(z.zone.id);
     }
+    if (p.runDist >= waypointAt(p.wp).at) this.reachWaypoint();
+    this.updateGoal();
     if (p.milestone < MILESTONES.length && p.runDist >= MILESTONES[p.milestone][0]) {
       const [m, t] = MILESTONES[p.milestone++];
       this.toast(`${m.toLocaleString()}m — ${t}`);
@@ -1227,8 +1321,19 @@ export class Game {
     $('over-title').textContent = title;
     $('over-cause').textContent = sub;
     $('over-saying').textContent = `“${saying()}”`;
-    $('over-chapter').textContent = `Fell in Chapter ${roman(p.chapter)}`;
-    $('over-score').textContent = score.toLocaleString();
+    const w = waypointAt(p.wp || 0);
+    const short = Math.max(0, w.at - p.runDist);
+    $('over-chapter').textContent = `Chapter ${roman(p.chapter)} · ${short < 1000 ? Math.round(short) + ' m' : (short / 1000).toFixed(1) + ' km'} short of ${w.name}`;
+    // the score counts up as it arrives
+    const scoreEl = $('over-score');
+    scoreEl.textContent = '0';
+    const t0 = performance.now() + 700;
+    const count = (now) => {
+      const k = Math.min(1, Math.max(0, (now - t0) / 1400));
+      scoreEl.textContent = Math.round(score * (1 - Math.pow(1 - k, 3))).toLocaleString();
+      if (k < 1 && this.state === 'over') requestAnimationFrame(count);
+    };
+    requestAnimationFrame(count);
     $('over-dist').textContent = Math.floor(p.runDist).toLocaleString();
     $('over-spice').textContent = p.spice.toLocaleString();
     $('over-best').textContent = Math.floor(this.save.best).toLocaleString();
@@ -1237,8 +1342,15 @@ export class Game {
     // journey line: where in the cycle of five biomes Ishra fell
     const z = zoneAt(p.runDist);
     const at = ((z.index + z.local / z.zone.length) / ZONES.length) * 100;
-    $('journey-fill').style.width = `${at}%`;
-    $('journey-mark').style.left = `${at}%`;
+    // the journey line draws itself in after the verdict lands
+    const fill = $('journey-fill'), mark = $('journey-mark');
+    fill.style.transition = mark.style.transition = 'none';
+    fill.style.width = '0%';
+    mark.style.left = '0%';
+    void fill.offsetWidth;
+    fill.style.transition = mark.style.transition = '';
+    fill.style.width = `${at}%`;
+    mark.style.left = `${at}%`;
     [...$('journey-labels').children].forEach((el, i) => { el.className = i < z.index ? 'past' : i === z.index ? 'here' : ''; });
     this.ui.hud.classList.add('hidden');
     this.ui.over.classList.remove('hidden');
@@ -1258,7 +1370,15 @@ export class Game {
     this.playerPos.y = p.y;
     const r = this.runner.root;
     r.position.copy(this.playerPos);
-    p.visualYaw = angleDamp(p.visualYaw, YAWS[seg.dir], 14, dt);
+    // riding, face the way the worm is actually travelling (it swings across the trail);
+    // on foot, face down the trail
+    let wantYaw = YAWS[seg.dir];
+    if (Math.abs(p.rideOff) > 0.6 && this.lastRiderPos && dt > 0) {
+      const dx = this.playerPos.x - this.lastRiderPos.x, dz = this.playerPos.z - this.lastRiderPos.z;
+      if (dx * dx + dz * dz > 1e-4) wantYaw = Math.atan2(-dx, -dz);
+    }
+    (this.lastRiderPos || (this.lastRiderPos = new THREE.Vector3())).copy(this.playerPos);
+    p.visualYaw = angleDamp(p.visualYaw, wantYaw, Math.abs(p.rideOff) > 0.6 ? 6 : 14, dt);
     r.rotation.y = p.visualYaw;
     r.rotation.z = (p.laneX - p.lane * LANE_W) * 0.08;
     let mode = 'idle';
@@ -1407,7 +1527,10 @@ export class Game {
     if (this.breachTimer <= 0) {
       const b = this.breaches.find((x) => !x.active);
       if (b) {
-        const fwd = this.v.a.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
+        // on the title screen, breach where the drifting camera is actually looking
+        const fwd = this.state === 'title'
+          ? this.camera.getWorldDirection(this.v.a).setY(0).normalize()
+          : this.v.a.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
         const ang = (Math.random() < 0.5 ? -1 : 1) * (0.35 + Math.random() * 0.6);
         const dist = 170 + Math.random() * 130;
         const dir = this.v.b.copy(fwd).applyAxisAngle(UP, ang);
@@ -1418,7 +1541,8 @@ export class Game {
         b.start(origin, across, 32 + Math.random() * 18, 7 + Math.random() * 2);
         this.audio.breach(origin);
       }
-      this.breachTimer = 16 + Math.random() * 20;
+      // the Maker shows itself more often on the title screen, to give the menu some life
+      this.breachTimer = this.state === 'title' ? 9 + Math.random() * 5 : 16 + Math.random() * 20;
     }
     for (const b of this.breaches) {
       const bursts = b.update(dt);
@@ -1452,6 +1576,36 @@ export class Game {
       look.y = Math.max(pos.y, 0) * 0.7 + 1.2;
       cam.fov = damp(cam.fov, 60 + sp * 12 + (p.trance > 0 ? -4 : 0), 3, dt);
       rate = 12;
+    } else if (st === 'intro') {
+      // the opening shots: the erg from on high, alongside Ishra, close on the face, then round
+      // behind to the gameplay view as the run begins
+      const seg = p.seg, fwd = seg.fwd, right = seg.right;
+      const k = clamp((this.introT % INTRO_SHOT) / INTRO_SHOT, 0, 1);
+      const i = Math.max(0, this.introIdx);
+      this.camYaw = YAWS[seg.dir];
+      if (i === 0) {
+        tp.copy(pos).addScaledVector(fwd, 34 - k * 12).addScaledVector(right, 24 - k * 6);
+        tp.y = pos.y + 15 - k * 3;
+        look.copy(pos).addScaledVector(fwd, -10);
+        look.y = pos.y + 2;
+      } else if (i === 1) {
+        tp.copy(pos).addScaledVector(right, 5.2).addScaledVector(fwd, -1.5 + k * 3);
+        tp.y = pos.y + 1.3;
+        look.copy(pos).addScaledVector(fwd, 1);
+        look.y = pos.y + 1.2;
+      } else if (i === 2) {
+        tp.copy(pos).addScaledVector(fwd, 3.8 - k * 0.6).addScaledVector(right, 1.0);
+        tp.y = pos.y + 1.45;
+        look.copy(pos);
+        look.y = pos.y + 1.25;
+      } else {
+        tp.copy(pos).addScaledVector(fwd, -7.4);
+        tp.y = pos.y + 3.4;
+        look.copy(pos).addScaledVector(fwd, 8);
+        look.y = pos.y + 1.2;
+      }
+      rate = i >= 3 ? 2.2 : 1.4;
+      cam.fov = damp(cam.fov, i === 2 ? 38 : i === 0 ? 50 : 55, 2, dt);
     } else if (st === 'dying' || (st === 'over' && this.deathPos)) {
       const c = this.deathPos;
       const a = this.camYaw + (this.deathT || 0) * 0.25;
@@ -1460,8 +1614,10 @@ export class Game {
       rate = st === 'dying' ? 3.5 : 1.2;
       cam.fov = damp(cam.fov, 58, 2, dt);
     } else {
-      const t = this.time * 0.07 + 2.2;
-      tp.set(pos.x + Math.sin(t) * 13, pos.y + 4.2 + Math.sin(this.time * 0.2) * 0.8, pos.z + Math.cos(t) * 13);
+      // the title camera drifts: slow orbit, breathing distance and height, a low heroic angle
+      const t = this.time * 0.085 + 2.2;
+      const rad = 13 + Math.sin(this.time * 0.11) * 3;
+      tp.set(pos.x + Math.sin(t) * rad, pos.y + 3.6 + Math.sin(this.time * 0.17) * 1.6, pos.z + Math.cos(t) * rad);
       look.copy(pos).addScaledVector(UP, 1.8);
       rate = 2.5;
       cam.fov = damp(cam.fov, 55, 2, dt);
@@ -1557,6 +1713,7 @@ export class Game {
     const p = this.p;
 
     if (st === 'running') this.updateRun(dt);
+    else if (st === 'intro') this.updateIntro(dt);
     else if (st === 'dying') this.updateDeath(dt);
     else if (st === 'over') this.deathT += dt * 0.2;
 

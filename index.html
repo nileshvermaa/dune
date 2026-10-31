@@ -39,7 +39,7 @@
 
         <div class="hud-right">
           <div class="hud-dist"><span id="dist">0</span> M</div>
-          <div class="hud-cap dim">Crossed</div>
+          <div class="hud-cap dim hud-goal" id="hud-goal">To the Cave of Birds</div>
           <div class="hud-cap"><i class="spice-dot"></i><span id="spice">0</span> spice</div>
           <div id="inventory">
             <div id="inv-thumper" class="hud-cap">Thumpers <b id="inv-thumper-count">1</b></div>
@@ -73,6 +73,14 @@
         <div id="zone-dashes"></div>
       </div>
       <div id="narration" class="hidden"></div>
+      <section id="intro" class="hidden" aria-live="polite">
+        <div class="intro-card" id="intro-card">
+          <div class="intro-kicker" id="intro-kicker"></div>
+          <p class="intro-line" id="intro-line"></p>
+        </div>
+        <div class="intro-dots" id="intro-dots"></div>
+        <button id="intro-skip" class="intro-skip">Skip</button>
+      </section>
       <div id="qte" class="hidden" aria-live="assertive">
         <div class="qte-label" id="qte-label">Set the hooks</div>
         <div class="qte-target">
@@ -84,18 +92,10 @@
       <div id="toasts"></div>
 
       <section id="title" class="screen">
-        <svg class="scene" aria-hidden="true" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice">
-          <defs><radialGradient id="tSun"><stop offset="0" stop-color="#ffe2b0" stop-opacity="0.55"/><stop offset="1" stop-color="#ffd08a" stop-opacity="0"/></radialGradient></defs>
-          <circle cx="930" cy="470" r="150" fill="url(#tSun)"/>
-          <circle cx="930" cy="470" r="9" fill="#fff8ea"/>
-          <path d="M300 150 C300 128 470 116 640 116 C810 116 980 128 980 150 L964 196 C940 214 800 222 640 222 C480 222 340 214 316 196 Z" fill="#2a1007"/>
-          <path d="M380 216 L376 240 M520 222 L518 252 M760 222 L762 252 M900 216 L904 240" stroke="#2a1007" stroke-width="3"/>
-          <g transform="translate(220 -76)"><g fill="#1c0a04"><path d="M560 552 l3 -18 l3 18 Z M584 553 l3 -15 l3 15 Z M606 553 l3 -19 l3 19 Z M630 554 l3 -16 l3 16 Z M652 554 l3 -18 l3 18 Z"/></g>
-          <path d="M563 552 L470 566 M587 553 L494 567 M609 553 L516 568 M633 554 L540 569 M655 554 L562 570" stroke="#1c0a04" stroke-width="1.2" opacity="0.5"/></g>
-        </svg>
-        <div class="title-center">
+                <div class="title-center">
           <div class="eyebrow">An endless journey</div>
           <h1><span>Arrakis</span><em>The Crossing</em></h1>
+          <p class="story-tease">The wells of Sietch Qanat have failed. Carry the last seed-water across the open erg, and do not let the Maker hear you.</p>
           <button id="play-btn" class="btn-line">Begin the Crossing</button>
           <div class="controls">
             <span><kbd>← →</kbd>Weave</span><span><kbd>↑</kbd>Jump</span><span><kbd>↓</kbd>Slide</span><span><kbd>E</kbd>Thumper</span>
@@ -130,6 +130,7 @@
           <path d="M560 0 L660 0 L800 720 L520 720 Z" fill="url(#pShaft)"/>
           <path d="M652 640 l3 -30 l3 30 Z M648 640 l14 0 l-1 -16 l-12 0 Z" fill="#05080b"/>
         </svg>
+        <div class="motes" id="motes"></div>
         <div class="journal">
           <div class="eyebrow">Paused · the journal of Ishra</div>
           <h2>The story so far</h2>
@@ -146,10 +147,11 @@
 
       <section id="over" class="screen hidden">
         <svg class="scene" aria-hidden="true" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice">
-          <g transform="translate(1100 572) scale(0.7) translate(-1040 -466)"><ellipse cx="1040" cy="470" rx="190" ry="56" fill="#1a1815" opacity="0.88"/><ellipse cx="1040" cy="466" rx="150" ry="38" fill="#0a0908"/><path d="M902 462 L914 470 M940 446 L948 458 M990 438 L994 452 M1040 436 L1040 450 M1090 438 L1086 452 M1140 446 L1132 458 M1178 462 L1166 470" stroke="#f2efe9" stroke-width="3"/></g>
+          <g class="maw"><g transform="translate(1100 572) scale(0.7) translate(-1040 -466)"><ellipse cx="1040" cy="470" rx="190" ry="56" fill="#1a1815" opacity="0.88"/><ellipse cx="1040" cy="466" rx="150" ry="38" fill="#0a0908"/><path d="M902 462 L914 470 M940 446 L948 458 M990 438 L994 452 M1040 436 L1040 450 M1090 438 L1086 452 M1140 446 L1132 458 M1178 462 L1166 470" stroke="#f2efe9" stroke-width="3"/></g></g>
           <path d="M156 590 l3 -24 l3 24 Z M152 590 l14 0 l-1 -14 l-12 0 Z" fill="#141210"/>
           <path d="M159 590 L350 606" stroke="#141210" stroke-width="1.5" opacity="0.6"/>
         </svg>
+        <div class="sandfall" id="sandfall"></div>
         <div class="over-inner">
           <div class="eyebrow" id="over-chapter"></div>
           <h2 id="over-title">Taken by the Maker</h2>

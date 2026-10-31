@@ -8,6 +8,29 @@ export const PROLOGUE = [
   'The old stone road is gone beneath the sand; only scattered paving survives. Everywhere else, walk without rhythm — or the Maker will hear you.',
 ];
 
+// The opening: why Ishra runs. Each card is one camera shot of the intro.
+export const INTRO = [
+  { kicker: 'Sietch Qanat · the end of the dry season', line: 'The deep wells have failed. The cisterns are dust.' },
+  { kicker: 'The last hope', line: 'One sealed flask of seed-water remains: enough to start a new cache, far across the open erg.' },
+  { kicker: 'Ishra, youngest of the water-carriers', line: 'There is no road any more. Only scattered stones, and the Maker listening beneath the sand.' },
+  { kicker: 'Walk without rhythm', line: 'Run. Break your stride. Do not stop until the water is safe.' },
+];
+
+// Where the seed-water is carried, one waypoint after another: reaching each refills the
+// stillsuit and sends Ishra on toward the next. Past the last, the names cycle deeper south.
+export const WAYPOINTS = [
+  { name: 'the Cave of Birds', at: 2500, line: 'The Cave of Birds. Fremen hands refill the stillsuit and point the way on.' },
+  { name: 'Sietch Tabr', at: 5500, line: 'Sietch Tabr. They drink to the water-carrier — and send the seed-water further still.' },
+  { name: 'Habbanya Ridge', at: 9000, line: 'Habbanya Ridge. Below, the southern erg: deeper sand, louder silence.' },
+  { name: 'the Red Wall', at: 13000, line: 'The Red Wall. Even here the cisterns are low. The flask must go on.' },
+  { name: 'the Shadout\'s Well', at: 17500, line: 'The Shadout\'s Well — the last mark on any map. Beyond it, only stories.' },
+];
+export function waypointAt(i) {
+  if (i < WAYPOINTS.length) return WAYPOINTS[i];
+  const k = i - WAYPOINTS.length + 1;
+  return { name: `the deep south, cairn ${roman(k)}`, at: 17500 + k * 5000, line: `Cairn ${roman(k)} of the deep south. Someone carried water here before. Someone will again.` };
+}
+
 // One chapter per biome visit; lines rotate on later cycles so the journey keeps unfolding.
 export const CHAPTERS = {
   desert: {
@@ -76,6 +99,7 @@ export const BEATS = {
   shieldSand: 'A shield on open sand drives the Maker to frenzy. Hurry.',
   thopter: 'An ornithopter from Qanat drops low. Grab the skid!',
   hookNow: 'The Maker rises beneath you — set the hooks!',
+  setOut: 'The flask of seed-water is sealed against Ishra\'s chest. The first waypoint lies ahead.',
   thrown: 'The Maker rolls and bucks. Ishra is flung back to the sand.',
 };
 

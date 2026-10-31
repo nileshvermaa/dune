@@ -225,7 +225,9 @@ export class Runner {
     }
     add(torso, new THREE.TorusGeometry(0.06, 0.018, 8, 18), rib, 0, 0.5, 0, Math.PI / 2);
     this.torsoKit = torso.children.slice(kitFrom); // chest plate, harness, reservoir, tubes, collar
-    this.suitMats = { suit, suitDark, rib, leather };
+    // the skinned body's suit: matte woven stillsuit, a touch warmer than the procedural one
+    const skinSuit = new THREE.MeshStandardMaterial({ color: '#5c4a3b', roughness: 0.72, metalness: 0.06 });
+    this.suitMats = { suit, suitDark, rib, leather, skinSuit };
 
     /* ---- head, hood & mantle ---- */
     const head = new THREE.Group();
@@ -685,7 +687,9 @@ export class Runner {
       if (o.isMesh) {
         o.castShadow = true;
         o.frustumCulled = false;
-        o.material = o.material.name === 'M_Joints' ? this.suitMats.suitDark : this.suitMats.suit;
+        // one material over the whole skin: a contrasting joint material is what made the body
+        // read as jointed segments rather than one figure
+        o.material = this.suitMats.skinSuit;
       }
     });
     const need = ['DEF-hips', 'DEF-spine003', 'DEF-neck', 'DEF-head', 'DEF-upper_armL', 'DEF-upper_armR', 'DEF-forearmL', 'DEF-forearmR', 'DEF-handL', 'DEF-handR',
