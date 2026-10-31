@@ -59,6 +59,7 @@ export function attachDevtools(g) {
     for (let i = 0; i < 200; i++) g.updateAtmosphere(0.05);
     g.p.wormGap = 45;
     for (let i = 0; i < 60; i++) g.updateCamera(0.05);
+    g.sky.update(0.016, g.camera.position, g.atmo, g.time);
     g.state = 'paused';
     document.getElementById('pause').classList.add('hidden');
     document.getElementById('toasts').innerHTML = '';

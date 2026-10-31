@@ -178,6 +178,7 @@ export class Track {
     };
     this.lines.push(line);
     this.terrain.markDirty(line.minx - 70, line.minz - 70, line.maxx + 70, line.maxz + 70);
+    this.reseat(line);
 
     this.populate(seg, first);
     this.buildDeck(seg, first);
@@ -707,14 +708,40 @@ export class Track {
     }
   }
 
-  propAt(seg, obj, x, s, yOffset = 0, onBed = false) {
+  // r > 0 seats the prop on the lowest ground under a footprint of that half-width
+  propAt(seg, obj, x, s, yOffset = 0, onBed = false, r = 0) {
     const w = this.localToWorld(seg, x, s, new THREE.Vector3());
-    const h = onBed ? SAND_BED : this.terrain.heightAt(w.x, w.z);
+    const h = onBed ? SAND_BED : r > 0 ? this.lowestUnder(seg, x, s, r) : this.terrain.heightAt(w.x, w.z);
     obj.position.set(x, h + yOffset, -s);
+    // remember how it was seated: later road segments flatten the dunes they pass through
+    if (!onBed) (seg.seated || (seg.seated = [])).push({ obj, x, s, r, off: yOffset, wx: w.x, wz: w.z });
     obj.userData.shadow = false;
     obj.traverse((o) => { o.userData.shadow = false; });
     seg.group.add(obj);
     return obj;
+  }
+
+  // A new stretch of road carves the dunes within ~70 m: drop earlier props back onto the sand.
+  reseat(line) {
+    for (const seg of this.segments) {
+      if (!seg.seated) continue;
+      for (const e of seg.seated) {
+        if (e.wx < line.minx - 75 || e.wx > line.maxx + 75 || e.wz < line.minz - 75 || e.wz > line.maxz + 75) continue;
+        const h = e.r > 0 ? this.lowestUnder(seg, e.x, e.s, e.r) : this.terrain.heightAt(e.wx, e.wz);
+        e.obj.position.y = h + e.off;
+      }
+    }
+  }
+
+  // lowest terrain height across a square footprint, so wide props never overhang a slope
+  lowestUnder(seg, x, s, r) {
+    const w = new THREE.Vector3();
+    let lo = Infinity;
+    for (const [dx, ds] of [[0, 0], [-r, -r], [r, -r], [-r, r], [r, r], [0, r], [0, -r], [r, 0], [-r, 0]]) {
+      this.localToWorld(seg, x + dx, s + ds, w);
+      lo = Math.min(lo, this.terrain.heightAt(w.x, w.z));
+    }
+    return lo;
   }
 
   decorate(seg, first) {
@@ -732,6 +759,14 @@ export class Track {
     }
 
     const sideLat = (side, near, far) => side * (side < 0 ? Math.max(near, 22) + rng() * (far - near) : near + rng() * (far - near));
+    // big set pieces must stay clear of every stretch of road, including the next one after the
+    // corner (not built yet, but it leaves from this segment's end)
+    const clear = (x, s, min) => {
+      if (L - s < min || s < -40) return false;
+      const w = this.localToWorld(seg, x, s, new THREE.Vector3());
+      return this.terrain.trackDistance(w.x, w.z) >= min;
+    };
+    const lat = () => (rng() < 0.5 ? -1 : 1);
 
     if (z === 'desert' || z === 'storm') {
       for (let s = s0; s < L; s += 20) {
@@ -747,6 +782,29 @@ export class Track {
           seg.animated.push({ type: 'thumper', head: t.head, phase: rng() * 6 });
         }
         if (rng() < 0.03) this.propAt(seg, P.makeWreck(rng), sideLat(rng() < 0.5 ? -1 : 1, 18, 40), s, 0.5);
+      }
+      // mid-distance sandstone shelves breaking the dune sea, with scree at their feet
+      for (let s = s0 + 30; s < L; s += 70 + rng() * 60) {
+        if (rng() > (z === 'storm' ? 0.35 : 0.7)) continue;
+        const x = lat() * (55 + rng() * 80);
+        if (!clear(x, s, 40)) continue;
+        const w = 14 + rng() * 22;
+        const shelf = this.propAt(seg, P.makeRock('mesa', Math.floor(rng() * 4), w, 6 + rng() * 12, w * (0.5 + rng() * 0.5)), x, s, -2.5, false, w * 0.55);
+        shelf.rotation.y = rng() * 6.28;
+        for (let k = 0; k < 4; k++) {
+          const b = 1.5 + rng() * 3;
+          const rock = this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), b, b * 0.7, b), x + (rng() - 0.5) * w * 1.6, s + (rng() - 0.5) * w * 1.6, -b * 0.1, false, b * 0.5);
+          rock.rotation.y = rng() * 6.28;
+        }
+      }
+      // rarely: a dark monolith half-buried in the dunes
+      if (z === 'desert' && rng() < 0.22) {
+        const s = 40 + rng() * Math.max(1, L - 80);
+        const x = lat() * (80 + rng() * 110);
+        if (clear(x, s, 60)) {
+          const m = this.propAt(seg, P.makeMonolith(), x, s, -5);
+          m.rotation.set((rng() - 0.5) * 0.3, rng() * 6.28, 0.12 + rng() * 0.25);
+        }
       }
     } else if (z === 'shieldwall') {
       for (let s = s0; s < L; s += 15) {
@@ -777,11 +835,27 @@ export class Track {
         if (this.inGap(seg, s, -3)) continue;
         this.propAt(seg, P.makeBigArch(15, 10), 0, s, 0, true);
       }
+      // the drowned city: broken walls close by, watchtowers on the skyline
+      for (let s = s0 + 10; s < L - 10; s += 26 + rng() * 18) {
+        if (rng() > 0.6) continue;
+        const x = lat() * (15 + rng() * 22);
+        if (!clear(x, s, 12)) continue;
+        const wall = this.propAt(seg, P.makeRuinWall(rng), x, s, -0.8, true);
+        wall.rotation.y = (rng() < 0.6 ? 0 : Math.PI / 2) + (rng() - 0.5) * 0.4;
+      }
+      for (let s = s0 + 40; s < L; s += 80 + rng() * 50) {
+        if (rng() > 0.7) continue;
+        const x = lat() * (70 + rng() * 110);
+        if (!clear(x, s, 45)) continue;
+        const tw = this.propAt(seg, P.makeRuinTower(rng), x, s, -2);
+        tw.rotation.set((rng() - 0.5) * 0.08, rng() * 6.28, (rng() - 0.5) * 0.08);
+      }
     } else if (z === 'spice') {
-      if (L > 90) {
+      const hx = lat() * (85 + rng() * 40);
+      if (L > 90 && clear(hx, L * 0.5, 55)) {
         const h = P.makeHarvester();
         h.group.rotation.y = rng() * 6.28;
-        this.propAt(seg, h.group, (rng() < 0.5 ? -1 : 1) * (85 + rng() * 40), L * 0.5, -1);
+        this.propAt(seg, h.group, hx, L * 0.5, -1);
         seg.animated.push({ type: 'harvester', update: h.update });
       }
       for (let s = s0; s < L; s += 9) {

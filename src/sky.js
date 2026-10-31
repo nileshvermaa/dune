@@ -133,7 +133,7 @@ export function installHeightFog() {
     float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
   #endif
   float fogH = exp( - max( vFogWorld.y + 2.0, 0.0 ) * 0.03 );
-  float fogGround = ( 1.0 - exp( - vFogDepth * 0.004 ) ) * fogH * 0.32;
+  float fogGround = ( 1.0 - exp( - vFogDepth * 0.004 ) ) * fogH * 0.24;
   fogFactor = clamp( max( fogFactor * mix( 0.8, 1.0, fogH ), fogGround ), 0.0, 1.0 );
   gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
 #endif`;
@@ -145,8 +145,8 @@ const PAL = {
   dayHorizon: C(0.98, 0.74, 0.5),
   setZenith: C(0.22, 0.16, 0.34),
   setHorizon: C(1.0, 0.42, 0.16),
-  nightZenith: C(0.035, 0.05, 0.12),
-  nightHorizon: C(0.2, 0.18, 0.28),
+  nightZenith: C(0.08, 0.13, 0.3),
+  nightHorizon: C(0.4, 0.42, 0.6),
   sunDay: C(1.0, 0.88, 0.7),
   sunSet: C(1.0, 0.45, 0.2),
   moonLight: C(0.45, 0.55, 0.9),
@@ -239,8 +239,8 @@ export class Sky {
     // key light: sun by day, first moon by night
     const useSun = el > -0.06;
     const ldir = useSun ? sunDir : u.uMoon1.value;
-    const sunI = smoothstep(-0.06, 0.12, el) * 3.1;
-    const moonI = night * 1.05;
+    const sunI = smoothstep(-0.06, 0.12, el) * 3.5;
+    const moonI = night * 0.8;
     this.sun.intensity = (useSun ? sunI : moonI) * (1 - atmo.haze * 0.6) + this.flash * 4;
     this.sun.color.copy(useSun ? u.uSunColor.value : PAL.moonLight);
     this.sun.position.copy(center).addScaledVector(ldir, 120);
@@ -248,6 +248,7 @@ export class Sky {
 
     this.hemi.color.copy(u.uZenith.value).lerp(hor, 0.5).multiplyScalar(1.2).lerp(PAL.moonLight, night * 0.35);
     this.hemi.groundColor.setRGB(0.55, 0.36, 0.2).multiplyScalar(lerp(0.35, 1, day));
-    this.hemi.intensity = lerp(0.9, 1.3, day) + night * 0.5 + atmo.haze * 0.6 + this.flash * 2;
+    // low fill by day so dune lee faces fall into real shadow; storms flatten the light
+    this.hemi.intensity = lerp(0.62, 0.82, day) + night * 0.3 + atmo.haze * 0.75 + this.flash * 2;
   }
 }

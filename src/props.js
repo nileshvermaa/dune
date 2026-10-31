@@ -398,6 +398,102 @@ export function makeRubbleWall(rnd) {
   return new THREE.Mesh(cached(`rubble-${v}`, () => buildRubble(300 + v * 17)), mats.stoneV);
 }
 
+// Broken stretch of coursed masonry with arched window openings and a ragged top.
+function buildRuinWall(seed) {
+  const rnd = mulberry32(seed);
+  const n = createNoise3D(seed);
+  const len = 12 + rnd() * 6, hMax = 6.5 + rnd() * 3, depth = 1.4, course = 0.82;
+  const nWin = 2 + Math.floor(rnd() * 2);
+  const winW = 1.7, winBottom = 1.6, winTop = 3.9;
+  const winX = Array.from({ length: nWin }, (_, i) => -len / 2 + ((i + 0.5) * len) / nWin);
+  const parts = [];
+  let row = 0;
+  for (let y = -1.6; y < hMax; y += course, row++) {
+    let x = -len / 2;
+    let first = true;
+    while (x < len / 2 - 0.05) {
+      let w = first && row % 2 ? 0.7 : 1.15 + rnd() * 0.8;
+      first = false;
+      w = Math.min(w, len / 2 - x);
+      const cx = x + w / 2, cy = y + course / 2;
+      x += w;
+      const edge = Math.abs(cx / (len / 2));
+      const top = hMax * (0.42 + 0.58 * (0.5 + 0.5 * n(cx * 0.16, 0.3, 1.7))) * (1 - 0.4 * edge * edge);
+      if (cy > top) continue;
+      const open = winX.some((wx) => {
+        const dx = Math.abs(cx - wx);
+        if (dx > winW / 2 || cy < winBottom) return false;
+        return cy < winTop + Math.sqrt(Math.max(0, (winW / 2) ** 2 - dx * dx));
+      });
+      if (open) continue;
+      parts.push([rbox(w - 0.05, course - 0.05, depth + (rnd() - 0.5) * 0.14, 0.06), blockColor(rnd), M(cx, cy, (rnd() - 0.5) * 0.08, 0, (rnd() - 0.5) * 0.03, 0)]);
+    }
+  }
+  for (const wx of winX) parts.push([rbox(winW + 0.5, 0.22, depth + 0.2, 0.04), blockColor(rnd, C.mid), M(wx, winBottom - 0.11, 0)]);
+  for (let i = 0; i < 12; i++) {
+    const s = 0.35 + rnd() * 0.8;
+    parts.push([rbox(s, s * 0.6, s * 0.85, 0.06), blockColor(rnd), M((rnd() - 0.5) * len * 1.1, -0.15 + rnd() * 0.3, (rnd() < 0.5 ? -1 : 1) * (1 + rnd() * 1.8), rnd(), rnd(), rnd())]);
+  }
+  return grime(merge(parts), -1.6, 1.4, 0.42);
+}
+
+export function makeRuinWall(rnd) {
+  const v = Math.floor(rnd() * 4);
+  const m = new THREE.Mesh(cached(`ruinwall-${v}`, () => buildRuinWall(500 + v * 23)), mats.stoneV);
+  m.castShadow = true;
+  return m;
+}
+
+// Tall tapering watchtower, crumbling at the crown: reads as a silhouette on the skyline.
+function buildRuinTower(seed) {
+  const rnd = mulberry32(seed);
+  const W = 7 + rnd() * 2, H = 30 + rnd() * 14, course = 1.6, th = 1.1;
+  const parts = [];
+  const rows = Math.floor(H / course);
+  for (let r = 0; r < rows; r++) {
+    const t = r / rows;
+    const w = W * (1 - 0.28 * t);
+    const y = -3 + r * course + course / 2;
+    const crown = t > 0.82;
+    const band = r % 6 === 5;
+    const ww = band ? w + 0.5 : w;
+    const slit = r % 4 === 2 && !band && t < 0.85;
+    for (let face = 0; face < 4; face++) {
+      if (crown && rnd() < (t - 0.82) * 4.5) continue;
+      const ry = (face * Math.PI) / 2;
+      const off = ww / 2 - th / 2;
+      const ox = Math.sin(ry) * off, oz = Math.cos(ry) * off;
+      const c = blockColor(rnd, band ? C.mid : C.light);
+      if (slit) {
+        const half = (ww - 0.9) / 2;
+        for (const sd of [-1, 1]) {
+          const lx = sd * (0.45 + half / 2);
+          parts.push([rbox(half, course - 0.06, th, 0.06), c, M(ox + Math.cos(ry) * lx, y, oz - Math.sin(ry) * lx, 0, ry, 0)]);
+        }
+      } else {
+        parts.push([rbox(ww, course - 0.06, th, 0.06), c, M(ox, y, oz, 0, ry, 0)]);
+      }
+    }
+  }
+  return grime(merge(parts), -3, 4, 0.45);
+}
+
+export function makeRuinTower(rnd) {
+  const v = Math.floor(rnd() * 3);
+  const m = new THREE.Mesh(cached(`ruintower-${v}`, () => buildRuinTower(700 + v * 41)), mats.stoneV);
+  return m;
+}
+
+// A dark slab of unknown age, half-swallowed by the dunes.
+function buildMonolith(seed) {
+  const g = merge([[rbox(4.2, 22, 1.7, 0.2, 4), col('#2e2018'), null]]);
+  return shade(chipped(g, 0.16, 0.32, seed), (x, y, z, nx, ny) => (ny > 0.5 ? 1.25 : 1) * (0.9 + 0.1 * Math.sin(y * 0.7)));
+}
+
+export function makeMonolith() {
+  return new THREE.Mesh(cached('monolith', () => buildMonolith(913)), mats.rock);
+}
+
 function buildPipe() {
   const parts = [];
   parts.push([new THREE.CylinderGeometry(0.42, 0.42, 9.2, 20), C.rust, M(0, 0.55, 0, 0, 0, Math.PI / 2)]);

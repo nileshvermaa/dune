@@ -25,7 +25,7 @@ export class Terrain {
     this.lines = lines; // shared array of track centerlines {ax,az,bx,bz,minx,minz,maxx,maxz}
     this.noise = createNoise2D(1337);
     this.chunks = new Map();
-    this.radius = 400;
+    this.radius = 460;
     this.castShadow = false;
     this.material = detailed(new THREE.MeshStandardMaterial({
       vertexColors: true,
@@ -131,6 +131,9 @@ export class Terrain {
         // windward slopes lighter, lee slopes darker
         const lee = Math.max(0, nx * 0.7 - nz * 0.3);
         c.multiplyScalar(1 - (1 - ny) * 0.25 - lee * 0.12);
+        // curvature: sharp crests catch light, hollows and dune feet collect shadow
+        const lap = (H[k - 1] + H[k + 1] + H[k - P] + H[k + P] - 4 * h) / (STEP * STEP);
+        c.multiplyScalar(1 + Math.max(-0.22, Math.min(0.16, -lap * 1.4)));
         const wx = ox + i * STEP, wz = oz + j * STEP;
         const macro = this.noise(wx * 0.0016 + 50, wz * 0.0016 - 20);
         c.lerp(C_RUST, Math.max(0, macro) * 0.32);
@@ -178,13 +181,13 @@ export class Terrain {
     }
     const r = hash2(cx, cz, 99);
     const rnd = mulberry32((hash2(cx, cz, 7) * 1e9) | 0);
-    const tries = r < 0.18 ? 1 : r < 0.3 ? 2 : 0;
+    const tries = r < 0.26 ? 1 : r < 0.4 ? 2 : 0;
     for (let t = 0; t < tries; t++) {
       const i = 6 + Math.floor(rnd() * (RES - 12)), j = 6 + Math.floor(rnd() * (RES - 12));
       const k = (j + 1) * P + (i + 1);
       if (D[k] < 120) continue;
       let rock;
-      if (r < 0.18) {
+      if (r < 0.26) {
         const w = 28 + rnd() * 45;
         rock = makeRock('mesa', Math.floor(rnd() * 4), w, 35 + rnd() * 55, w * (0.6 + rnd() * 0.6));
         rock.position.set(i * STEP, H[k] - 5, j * STEP);
