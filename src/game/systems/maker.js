@@ -2,7 +2,7 @@ import { damp, smoothstep } from '../../engine/noise.js';
 import { makeThumper } from '../../world/props.js';
 import { SAND_BED } from '../../world/terrain.js';
 import { BEATS } from '../../content/story.js';
-import { rideDifficulty, promptFor, rideLength, balanceInterval } from '../../content/difficulty.js';
+import { rideDifficulty, promptFor, rideLength, balanceInterval, BREAK_RELIEF, BREAK_STRAIGHT } from '../../content/difficulty.js';
 import { UP } from '../constants.js';
 
 // The Maker: rhythm and wormsign, thumpers, hooking and riding, and the worm in the sand.
@@ -85,22 +85,26 @@ export const MakerSystem = {
 
   // "Walk without rhythm": on open sand, irregular moves quiet your footsteps —
   // but only if the moves themselves don't fall into a pattern.
-  rhythmBreak() {
+  // a move on open sand: kind is 'lane', 'turn', 'jump' or 'slide' (content/difficulty.js says how
+  // much each sheds). Moves timed like a metronome (three equal gaps running) shed nothing.
+  rhythmBreak(kind = 'jump') {
     const p = this.p;
     if (!p.onSand) return;
+    p.straight *= BREAK_STRAIGHT[kind];
     const gap = this.time - p.lastBreak;
     if (gap < 0.22) return;
-    const match = p.lastGap > 0 && Math.abs(gap - p.lastGap) / p.lastGap < 0.18;
+    const near = (g) => g > 0 && Math.abs(gap - g) / g < 0.12;
+    const match = near(p.lastGap) && near(p.prevGap);
     if (match) {
-      p.sign = Math.min(100, p.sign + 6);
       this.beat('tooRegular', true);
       this.flash('#ff8a2a', 0.12);
     } else {
-      p.sign = Math.max(0, p.sign - 19 - (this.mods.breakBonus || 0));
+      p.sign = Math.max(0, p.sign - BREAK_RELIEF[kind] - (this.mods.breakBonus || 0));
     }
     p.strides.push({ gap: Math.min(gap, 1.2), match });
     if (p.strides.length > 8) p.strides.shift();
     this.drawStride();
+    p.prevGap = p.lastGap;
     p.lastGap = gap;
     p.lastBreak = this.time;
   },

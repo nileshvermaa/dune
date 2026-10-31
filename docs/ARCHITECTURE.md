@@ -35,8 +35,9 @@ src/
     props.js         procedural models: rocks, ruins, pickups, thumpers, ornithopters…
     effects.js       particles, drifting dust, the storm wall, the worm's sand mound
   actors/
-    player.js        the runner: skinned rig, cloak cloth, procedural layers on the clips
-    rig.js           loads the skinned body and animation clips (public/models/runner.glb)
+    player.js        the runner: skinned body, face, kit, cloak cloth, procedural poses on the clips
+    rig.js           loads the animation clips and the carrier bodies (public/models/)
+    retarget.js      carries the clips from the animation rig onto the bodies' skeleton
     worm.js          the chasing worm, breaching worms and the devouring worm
   engine/            low-level helpers with no game knowledge
     noise.js         seeded RNG, simplex noise, easing and damping
@@ -48,6 +49,7 @@ src/
   styles/            index.css imports the partials in cascade order
   dev/devtools.js    autopilot, fast-forward, photo studio (development only)
 tests/               Vitest unit tests for content and difficulty
+scripts/             asset build scripts (the carrier bodies)
 ```
 
 Dependencies point downward: `game` uses everything; `world` and `actors` use `engine` and
@@ -92,6 +94,7 @@ you will touch most:
 | `y`, `vy`, `grounded`, `slideT` | jump and slide physics |
 | `speed`, `runDist` | current speed (m/s) and distance run (m) |
 | `water`, `sign`, `vision` | the three gauges: water %, wormsign %, prescience % |
+| `straight` | metres run on open sand without changing lane (drives wormsign) |
 | `spice`, `score`, `mult` | collected spice, score and multiplier |
 | `thumpers`, `hooks`, `shield` | inventory |
 | `trance`, `fly`, `silent`, `seal`, `rush`, `lure` | timed effects (seconds left) |
@@ -143,7 +146,7 @@ its file, and `tests/content.test.js` checks the links between them.
 - **Abilities** — [content/abilities.js](../src/content/abilities.js). `use(game)`; return
   `false` to refuse without spending the cooldown.
 - **Carriers** — [content/characters.js](../src/content/characters.js). Text, ability, unlock,
-  `mods` and `look`.
+  `mods` and `look` (which body, skin and brow colours, suit colours, proportions).
 - **Biomes** — [content/zones.js](../src/content/zones.js). Atmosphere and obstacle weights.
 - **Story** — [content/story.js](../src/content/story.js). All player-facing prose.
 
@@ -172,7 +175,7 @@ its file, and `tests/content.test.js` checks the links between them.
 ### Add a carrier
 
 1. Add an entry to `CHARACTERS` with a new `id`, text, `unlock: { dist, spice }` (each later
-   than the last; the tests check), `mods`, and a `look` (colours and proportions).
+   than the last; the tests check), `mods`, and a `look`: a body (`f` or `m`), skin, brow and suit colours, and proportions.
 2. Point `active.id` at an existing ability, or add one to `ABILITIES`.
 3. A new kind of rule change is a new `mods` key: document it in the header of
    `characters.js`, read it where the rule lives (`this.mods.myKey || default`) and add it to the

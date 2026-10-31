@@ -51,6 +51,10 @@
 #worm-fill { height: 2px; width: 0; background: var(--cream); }
 #worm-meter .mark { position: absolute; left: 65%; top: -6px; width: 1px; height: 14px; background: var(--cream); }
 #worm-meter.lured #worm-fill { background: rgba(255, 243, 228, 0.45); }
+#worm-straight { flex: 1; text-align: center; font-size: 10px; font-weight: 500; letter-spacing: 0.4em; text-transform: uppercase; }
+#worm-meter.straight #worm-straight { color: #ffc58a; animation: straight-pulse 0.9s ease-in-out infinite; }
+#worm-meter.straight #worm-fill { background: #ffb36b; }
+@keyframes straight-pulse { 50% { opacity: 0.6; } }
 
 #thumper-btn { pointer-events: auto; position: absolute; right: 48px; bottom: max(44px, calc(env(safe-area-inset-bottom) + 20px)); min-height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 22px; background: var(--cream); border: none; color: #3a1206; cursor: pointer; text-shadow: none; font-size: 12px; font-weight: 500; letter-spacing: 0.4em; text-transform: uppercase; opacity: 0; transform: translateY(8px); transition: opacity 0.3s, transform 0.3s; }
 #thumper-btn b { font-weight: 500; letter-spacing: 0.1em; }

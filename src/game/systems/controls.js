@@ -42,11 +42,11 @@ export const ControlsSystem = {
       if (seg.next && !p.pendingTurn && dir === seg.turn && p.fly <= 0 && this.inTurnWindow()) {
         p.pendingTurn = dir;
         this.audio.whoosh(500, 1500, 0.18, 0.12);
-        this.rhythmBreak();
+        this.rhythmBreak('turn');
         return;
       }
       const nl = clamp(p.lane + dir, -1, 1);
-      if (nl !== p.lane) { p.lane = nl; this.audio.whoosh(600, 1200, 0.12, 0.1); this.rhythmBreak(); }
+      if (nl !== p.lane) { p.lane = nl; this.audio.whoosh(600, 1200, 0.12, 0.1); this.rhythmBreak('lane'); }
     } else if (a === 'jump' || a === 'tap') {
       if (p.fly > 0) return;
       if (p.grounded) {
@@ -66,7 +66,7 @@ export const ControlsSystem = {
     } else if (a === 'slide') {
       if (p.fly > 0) return;
       if (p.grounded) {
-        if (p.slideT <= 0) { this.audio.slide(); this.rhythmBreak(); }
+        if (p.slideT <= 0) { this.audio.slide(); this.rhythmBreak('slide'); }
         p.slideT = SLIDE_TIME * (this.mods.slide || 1);
       } else {
         p.vy = Math.min(p.vy, -22);

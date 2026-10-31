@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   speedAt, layoutDifficulty, obstacleSpacing, stoneChance, stoneLength,
-  wormsignRate, rideDifficulty, promptFor, rideLength, balanceInterval,
+  wormsignPerMetre, straightLimit, BREAK_RELIEF, BREAK_STRAIGHT, rideDifficulty, promptFor, rideLength, balanceInterval,
 } from '../src/content/difficulty.js';
 import { mulberry32 } from '../src/engine/noise.js';
 
@@ -40,9 +40,35 @@ describe('trail layout', () => {
 });
 
 describe('the Maker', () => {
-  it('wormsign builds faster as the runner speeds up, gently at the start', () => {
-    expect(wormsignRate(30, 2000)).toBeGreaterThan(wormsignRate(15, 2000));
-    expect(wormsignRate(15, 0)).toBeLessThan(wormsignRate(15, 2000));
+  // metres of open sand a runner covers from no wormsign until the Maker arrives
+  const metresToWorm = (runDist, weaveEvery = Infinity) => {
+    let sign = 0, straight = 0;
+    for (let m = 1; m < 5000; m++) {
+      straight += 1;
+      sign += wormsignPerMetre(straight, runDist + m);
+      if (m % weaveEvery === 0) { straight *= BREAK_STRAIGHT.lane; sign = Math.max(0, sign - BREAK_RELIEF.lane); }
+      if (sign >= 100) return m;
+    }
+    return Infinity;
+  };
+
+  it('a straight line across open sand brings the Maker within a couple of hundred metres', () => {
+    expect(metresToWorm(2000)).toBeGreaterThan(120);
+    expect(metresToWorm(2000)).toBeLessThan(220);
+    expect(metresToWorm(12000)).toBeLessThan(metresToWorm(2000)); // the line shortens deeper in
+    expect(metresToWorm(0)).toBeGreaterThan(metresToWorm(2000)); // gentle for the first stretch
+  });
+
+  it('weaving between lanes keeps it away', () => {
+    expect(metresToWorm(2000, 40)).toBe(Infinity);
+    expect(metresToWorm(12000, 30)).toBe(Infinity);
+  });
+
+  it('the longer the line, the faster the sign climbs', () => {
+    expect(wormsignPerMetre(100, 2000)).toBeGreaterThan(wormsignPerMetre(20, 2000) * 4);
+    expect(straightLimit(12000)).toBeLessThan(straightLimit(0));
+    expect(BREAK_STRAIGHT.lane).toBe(0);
+    expect(BREAK_RELIEF.lane).toBeGreaterThan(BREAK_RELIEF.jump);
   });
 
   it('ride difficulty rises with distance and rides, clamped to 0..1', () => {

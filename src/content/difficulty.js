@@ -21,11 +21,22 @@ export function obstacleSpacing(speed, diff, rng) {
 export const stoneChance = (diff) => 0.55 - diff * 0.25;
 export const stoneLength = (diff, rng) => 16 + rng() * 22 * (1 - diff * 0.5);
 
-// Wormsign gained per second of steady running on open sand (before carrier and powerup modifiers).
-export function wormsignRate(speed, runDist) {
+// Wormsign gained per metre of open sand (before carrier and powerup modifiers): a little for every
+// step, plus a term that grows with the square of the distance run without changing lane. A straight
+// line is a drumbeat the Maker follows: hold one for about straightLimit() metres and it arrives.
+// Being per metre, it bites harder in time as the run gets faster.
+export const straightLimit = (runDist) => 150 - 40 * layoutDifficulty(runDist);
+export function wormsignPerMetre(straight, runDist) {
   const ease = Math.min(1, 0.45 + runDist / 600); // gentle for the first stretch
-  return (9 + speed * 0.28) * ease;
+  const s = straight / straightLimit(runDist);
+  return (0.1 + s * s) * ease;
 }
+
+// Wormsign shed by breaking the line: changing lane resets the straight run entirely, a corner
+// halves it, a jump or slide only unsettles the rhythm. Repeating the same timing still counts
+// as a rhythm (see rhythmBreak in game/systems/maker.js).
+export const BREAK_RELIEF = { lane: 12, turn: 8, jump: 6, slide: 6 };
+export const BREAK_STRAIGHT = { lane: 0, turn: 0.5, jump: 1, slide: 1 }; // straight run kept
 
 // How hard the Maker is to hook and to hold, 0..1: rises with distance and with every ride.
 export function rideDifficulty(runDist, rides) {

@@ -85,7 +85,8 @@ export function chapterFor(zoneId, visit) {
 
 // One-time beats the first time something happens in a run.
 export const BEATS = {
-  firstSand: 'Open sand in every direction. Break your stride — the Maker hears a steady step.',
+  firstSand: 'Open sand in every direction. Never hold a straight line — weave between lanes. The Maker follows a steady step.',
+  tooStraight: 'Too straight. A line across the sand is a drumbeat — weave, or the Maker will follow it.',
   tooRegular: 'Too even. A pattern is still a rhythm.',
   wormRising: 'Wormsign. Vary your steps — or plant a thumper.',
   thumper: 'The thumper pounds the sand. Far off, the Maker turns toward the false heartbeat.',

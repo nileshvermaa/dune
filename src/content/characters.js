@@ -11,8 +11,8 @@
 //   doubleJump  a second jump in the air        slide      slide length multiplier
 //   shieldEvery seconds for a Holtzman shield to recharge
 //   stoneWater  water regained per second on old paving
-// look: suit / cloak / hood / leather colours, body scale, shoulder and limb proportions,
-//   cloak length, and the Ibad glow of the eyes
+// look: body ('f' or 'm' skinned base), skin and brow colours, suit / cloak / hood / leather
+//   colours, body scale, shoulder and limb proportions, cloak length, and the Ibad glow of the eyes
 
 export const CHARACTERS = [
   {
@@ -25,7 +25,7 @@ export const CHARACTERS = [
     weakness: 'No special edge with the Maker.',
     unlock: null,
     mods: { drain: 0.75 },
-    look: { suit: '#5c4a3b', cloak: ['#7d5d40', '#b8956b'], hood: '#8a6b4b', leather: '#6c472b', scale: 0.96, shoulders: 1, limbs: 1, cloakLen: 1.02, eyes: 0.55 },
+    look: { body: 'f', skin: '#f0c19c', brows: '#2b1c14', suit: '#5c4a3b', cloak: ['#7d5d40', '#b8956b'], hood: '#8a6b4b', leather: '#6c472b', scale: 0.96, shoulders: 1, limbs: 1, cloakLen: 1.02, eyes: 0.55 },
   },
   {
     id: 'kaleb',
@@ -37,7 +37,7 @@ export const CHARACTERS = [
     weakness: 'Drinks hard: water drains 15% faster.',
     unlock: { dist: 1500, spice: 500 },
     mods: { hooks: 1, hookWindow: 1.4, hookSteps: -1, rideTime: 1.3, drain: 1.15 },
-    look: { suit: '#3e3530', cloak: ['#6a2f1c', '#9a4f2c'], hood: '#5b3324', leather: '#4a3020', scale: 1.0, shoulders: 1.1, limbs: 1.02, cloakLen: 1.1, eyes: 0.7 },
+    look: { body: 'm', skin: '#a8714f', brows: '#1c120d', suit: '#3e3530', cloak: ['#6a2f1c', '#9a4f2c'], hood: '#5b3324', leather: '#4a3020', scale: 1.0, shoulders: 1.1, limbs: 1.02, cloakLen: 1.1, eyes: 0.7 },
   },
   {
     id: 'nadira',
@@ -49,7 +49,7 @@ export const CHARACTERS = [
     weakness: 'Smells of spice: wormsign builds 15% faster.',
     unlock: { dist: 3000, spice: 1000 },
     mods: { magnet: true, vision: 2, signRate: 1.15 },
-    look: { suit: '#3b3550', cloak: ['#2f2a55', '#5a52a0'], hood: '#463f78', leather: '#3a3150', scale: 0.92, shoulders: 0.92, limbs: 0.98, cloakLen: 1.18, eyes: 1.8 },
+    look: { body: 'f', skin: '#e2b48c', brows: '#1e1712', suit: '#3b3550', cloak: ['#2f2a55', '#5a52a0'], hood: '#463f78', leather: '#3a3150', scale: 0.92, shoulders: 0.92, limbs: 0.98, cloakLen: 1.18, eyes: 1.8 },
   },
   {
     id: 'tarik',
@@ -61,7 +61,7 @@ export const CHARACTERS = [
     weakness: 'Light kit: crashes cost 10 more water.',
     unlock: { dist: 5000, spice: 1600 },
     mods: { doubleJump: true, breakBonus: 6, slide: 1.3, crashCost: 10 },
-    look: { suit: '#6b5a44', cloak: ['#a88452', '#d9b77e'], hood: '#b48d5a', leather: '#7a5432', scale: 0.98, shoulders: 0.94, limbs: 1.06, cloakLen: 0.72, eyes: 0.55 },
+    look: { body: 'm', skin: '#c99068', brows: '#3a2416', suit: '#6b5a44', cloak: ['#a88452', '#d9b77e'], hood: '#b48d5a', leather: '#7a5432', scale: 0.98, shoulders: 0.94, limbs: 1.06, cloakLen: 0.72, eyes: 0.55 },
   },
   {
     id: 'zara',
@@ -73,7 +73,7 @@ export const CHARACTERS = [
     weakness: 'Heavy armour: hook prompts are faster.',
     unlock: { dist: 8000, spice: 2500 },
     mods: { shieldEvery: 40, stoneWater: 4, hookWindow: 0.8 },
-    look: { suit: '#4a4640', cloak: ['#c9bfae', '#ece4d4'], hood: '#d8cdb8', leather: '#5a4a3a', scale: 1.0, shoulders: 1.16, limbs: 1, cloakLen: 1.0, eyes: 0.55 },
+    look: { body: 'f', skin: '#94603f', brows: '#140e0a', suit: '#4a4640', cloak: ['#c9bfae', '#ece4d4'], hood: '#d8cdb8', leather: '#5a4a3a', scale: 1.0, shoulders: 1.16, limbs: 1, cloakLen: 1.0, eyes: 0.55 },
   },
 ];
 

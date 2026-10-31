@@ -12,9 +12,11 @@ photo textures and a CC0 animation set are credited in `public/textures` and `pu
 
 ## How to survive
 
-- **Walk without rhythm.** The whole desert is open sand: every steady step raises *wormsign*.
-  Break your stride — jump, slide, weave — but unevenly: a regular pattern is still a rhythm,
-  and the Maker hears it. At full wormsign, the worm takes you.
+- **Never run straight.** The whole desert is open sand, and a straight line across it is a
+  drumbeat the Maker follows. *Wormsign* (the bar at the bottom, always on) climbs with every
+  metre you hold a lane, and faster the longer you hold it: about 200 m of straight running and
+  the worm takes you. Change lanes to break the line; corners help a little, jumps and slides a
+  little less. Don't weave like a metronome, either: perfectly even timing still sounds like a rhythm.
 - **Stone is safe.** Only scattered stretches of the old paving survive. The Maker cannot follow
   onto them, and wormsign drains while you cross.
 - **Turn at the bends.** Swipe or press toward the bend before every corner. Miss it and you run

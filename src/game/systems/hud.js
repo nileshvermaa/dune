@@ -1,4 +1,5 @@
 import { clamp } from '../../engine/noise.js';
+import { straightLimit } from '../../content/difficulty.js';
 import { roman, saying } from '../../content/story.js';
 import { STATUS } from '../../content/powerups.js';
 import { TRANCE_TIME, ZONE_LABELS } from '../constants.js';
@@ -19,7 +20,7 @@ export const HudSystem = {
       intro: $('intro'), introCard: $('intro-card'), introKicker: $('intro-kicker'), introLine: $('intro-line'), introDots: $('intro-dots'),
       goal: $('hud-goal'), chars: $('chars'),
       thumperBtnCount: $('thumper-btn-count'), hudChapter: $('hud-chapter'), waterPct: $('water-pct'), visionBar: $('vision-bar'),
-      wormPct: $('worm-pct'), danger: $('danger'), stride: $('stride'), strideBars: $('stride-bars'), strideStatus: $('stride-status'),
+      wormPct: $('worm-pct'), wormStraight: $('worm-straight'), danger: $('danger'), stride: $('stride'), strideBars: $('stride-bars'), strideStatus: $('stride-status'),
     });
     ui.waterSegs = Array.from({ length: 10 }, () => $('water-segs').appendChild(document.createElement('i')));
     ui.strideEls = Array.from({ length: 8 }, () => ui.strideBars.appendChild(document.createElement('i')));
@@ -182,7 +183,11 @@ export const HudSystem = {
     this.setText('dist', ui.dist, Math.floor(p.runDist).toLocaleString());
     const close = p.sign / 100;
     const signPct = Math.round(close * 100);
-    ui.wormMeter.classList.toggle('show', p.onSand || close > 0.03);
+    // always on during a run: how close the Maker is, and how long you have held a straight line
+    ui.wormMeter.classList.add('show');
+    const line = p.onSand && p.straight > 25 ? Math.round(p.straight / 5) * 5 : 0;
+    this.setText('wormStraight', ui.wormStraight, line ? `straight ${line} m — weave` : p.onSand ? '' : p.ride > 0 || p.fly > 0 ? '' : 'old stone — safe');
+    ui.wormMeter.classList.toggle('straight', p.straight > straightLimit(p.runDist) * 0.55 && p.onSand);
     ui.wormMeter.classList.toggle('lured', p.lure > 0);
     ui.wormFill.style.width = `${signPct}%`;
     this.setText('wormPct', ui.wormPct, `${signPct}%`);

@@ -16,6 +16,27 @@ const bump = (th, c, w) => {
   return Math.exp(-(d * d) / (2 * w * w));
 };
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const IBAD = new THREE.Color('#3f86e0');
+// the slide pose (see slidePose), parents before children
+const SLIDE = [
+  ['pelvis', 0, 0.62, 0.78], ['spine_01', 0, 0.68, 0.73], ['spine_02', 0, 0.78, 0.62], ['spine_03', 0, 0.88, 0.47],
+  ['neck_01', 0, 0.96, 0.25], ['Head', 0, 1, -0.12],
+  ['thigh_r', 0.1, -0.28, -0.95], ['calf_r', 0.06, -0.3, -0.95], ['foot_r', 0, 0.55, -0.83],
+  ['thigh_l', -0.3, -0.4, -0.87], ['calf_l', 0.35, -0.42, 0.84], ['foot_l', 0.2, -0.75, 0.6],
+  ['upperarm_l', -0.45, -0.55, 0.7], ['lowerarm_l', -0.3, -0.78, 0.55],
+  ['upperarm_r', 0.5, 0.45, -0.55], ['lowerarm_r', 0.22, 0.88, -0.4],
+];
+const FLIP = new THREE.Vector3(-1, 1, -1); // model space to runner space (the model is turned to face -z)
+const _pq = new THREE.Quaternion();
+const _aq = new THREE.Quaternion();
+
+// rotate a bone about a world-space axis, whatever its parents' orientation (Object3D's
+// rotateOnWorldAxis assumes an unrotated parent, which no bone in a rig has)
+function rotateBoneWorld(bone, axis, angle) {
+  bone.parent.getWorldQuaternion(_pq);
+  _aq.setFromAxisAngle(axis, angle);
+  bone.quaternion.premultiply(_aq.premultiply(_pq.clone().invert()).multiply(_pq));
+}
 const mix = (a, b, t) => a + (b - a) * t;
 
 const shieldVert = /* glsl */ `
@@ -227,14 +248,19 @@ export class Runner {
     this.torsoKit = torso.children.slice(kitFrom); // chest plate, harness, reservoir, tubes, collar
     // the skinned body's suit: matte woven stillsuit, a touch warmer than the procedural one
     const skinSuit = new THREE.MeshStandardMaterial({ color: '#5c4a3b', roughness: 0.72, metalness: 0.06 });
-    this.suitMats = { suit, suitDark, rib, leather, skinSuit, hoodCloth, clothDark };
+    // the skinned body's bare face (its own texture, tinted to the carrier) and worn boots
+    const faceSkin = new THREE.MeshStandardMaterial({ color: '#d8a888', roughness: 0.55 });
+    const boot = new THREE.MeshStandardMaterial({ color: '#2e241d', roughness: 0.8, metalness: 0.04 });
+    this.suitMats = { suit, suitDark, rib, leather, skinSuit, hoodCloth, clothDark, faceSkin, boot };
 
     /* ---- head, hood & mantle ---- */
     const head = new THREE.Group();
     head.position.y = 0.6;
     torso.add(head);
     this.head = head;
-    add(head, new THREE.SphereGeometry(0.105, 20, 16), skin, 0, 0.02, 0).scale.set(0.95, 1.08, 1);
+    const skull = add(head, new THREE.SphereGeometry(0.105, 20, 16), skin, 0, 0.02, 0);
+    skull.scale.set(0.95, 1.08, 1);
+    this.faceParts = [skull]; // the procedural face, replaced by the skinned body's real one
     // hood: open toward -z, a little long at the back so it reads as cloth, not a helmet
     const hoodGeo = new THREE.SphereGeometry(0.14, 32, 20, Math.PI * 1.5 + Math.PI * 0.2, Math.PI * 1.6, 0, Math.PI * 0.78);
     displace(hoodGeo, (x, y, z, o) => {
@@ -245,7 +271,7 @@ export class Runner {
       const r = Math.hypot(x, y, z) || 1;
       o.set((x / r) * fold, -Math.max(0, -y) * back * 0.35, (z / r) * fold);
     });
-    const hood = add(head, hoodGeo, hoodCloth, 0, 0.03, 0.016);
+    const hood = (this.hood = add(head, hoodGeo, hoodCloth, 0, 0.03, 0.016));
     hood.rotation.x = -0.12;
     hood.scale.set(0.94, 0.98, 1.02);
     // mantle: drapes from the neck over the shoulders and back, open at the chest
@@ -253,24 +279,28 @@ export class Runner {
     const mantle = add(head, new THREE.LatheGeometry(mantleProfile, 28, -Math.PI * 0.68, Math.PI * 1.36), hoodCloth, 0, -0.05, 0.015);
     mantle.scale.set(1.02, 1, 0.8);
     // mask, nose plugs, mouth tube
-    add(head, new THREE.SphereGeometry(0.112, 20, 10, Math.PI * 1.5 - Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.52, Math.PI * 0.3), suitDark, 0, 0.005, 0);
+    const mask = add(head, new THREE.SphereGeometry(0.112, 20, 10, Math.PI * 1.5 - Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.52, Math.PI * 0.3), suitDark, 0, 0.005, 0);
     // face veil over the mask, a small mouth valve, nose-plug tubes running back to the suit
-    add(head, new THREE.SphereGeometry(0.118, 20, 8, Math.PI * 1.5 - Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.55, Math.PI * 0.28), hoodCloth, 0, 0.0, 0.002);
-    add(head, new THREE.CylinderGeometry(0.016, 0.02, 0.025, 10), rib, 0.02, -0.05, -0.113, Math.PI / 2);
+    const veil = add(head, new THREE.SphereGeometry(0.118, 20, 8, Math.PI * 1.5 - Math.PI * 0.42, Math.PI * 0.84, Math.PI * 0.55, Math.PI * 0.28), hoodCloth, 0, 0.0, 0.002);
+    const valve = add(head, new THREE.CylinderGeometry(0.016, 0.02, 0.025, 10), rib, 0.02, -0.05, -0.113, Math.PI / 2);
+    // the skinned bodies show their own face: mask, valve and nose plugs come off
+    this.maskParts = [mask, veil, valve];
+    this.noseTubes = [];
     const eyeMat = (this.eyeMat = new THREE.MeshStandardMaterial({ color: '#173a5c', emissive: '#2f86d6', emissiveIntensity: 0.55, roughness: 0.2 }));
     for (const side of [-1, 1]) {
       const tube = new THREE.CatmullRomCurve3([
         new THREE.Vector3(side * 0.014, 0.0, -0.104), new THREE.Vector3(side * 0.06, -0.01, -0.09),
         new THREE.Vector3(side * 0.1, -0.04, -0.03), new THREE.Vector3(side * 0.09, -0.1, 0.03),
       ]);
-      add(head, new THREE.TubeGeometry(tube, 10, 0.005, 5, false), rib);
+      this.noseTubes.push(add(head, new THREE.TubeGeometry(tube, 10, 0.005, 5, false), rib));
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0075, 10, 8), eyeMat);
       eye.position.set(side * 0.034, 0.036, -0.097);
       head.add(eye);
+      this.faceParts.push(eye);
     }
     // nose and brow ridge give the face some relief
-    add(head, new THREE.ConeGeometry(0.012, 0.03, 8), skin, 0, 0.018, -0.105, -1.35);
-    add(head, new THREE.CapsuleGeometry(0.009, 0.07, 3, 8), skin, 0, 0.052, -0.095, 0, 0, Math.PI / 2);
+    this.faceParts.push(add(head, new THREE.ConeGeometry(0.012, 0.03, 8), skin, 0, 0.018, -0.105, -1.35));
+    this.faceParts.push(add(head, new THREE.CapsuleGeometry(0.009, 0.07, 3, 8), skin, 0, 0.052, -0.095, 0, 0, Math.PI / 2));
 
     /* ---- arms ---- */
     this.arms = [];
@@ -347,28 +377,52 @@ export class Runner {
     M.leather.color.set(look.leather);
     M.hoodCloth.color.set(look.hood);
     M.clothDark.color.set(look.hood).multiplyScalar(0.78);
+    M.faceSkin.color.set(look.skin || '#d8a888');
+    M.boot.color.set(look.leather).multiplyScalar(0.55);
     this.eyeMat.emissiveIntensity = look.eyes;
     this.buildCloak(look.cloakLen, look.cloak[0], look.cloak[1]);
     this.kin.ready = false; // re-seat the new cloth
-    if (this.rig) this.applyProportions();
+    if (this.rigs && (!this.rig || this.rig.tag !== (look.body || 'f'))) this.wear(look.body || 'f');
+    else if (this.rig) { this.applyProportions(); this.tintFace(); }
+  }
+
+  // Use the skinned bodies from loadRunnerRig() (actors/rig.js), switching body to suit the carrier.
+  useRigs(rigs) {
+    this.rigs = rigs;
+    this.wear((this.look && this.look.body) || 'f');
+  }
+
+  wear(tag) {
+    this.wearing = tag;
+    this.rigs.body(tag).then((body) => { if (this.wearing === tag) this.attachRig(body); })
+      .catch((err) => console.warn('Carrier body unavailable', err));
   }
 
   applyProportions() {
     const look = this.look, model = this.rig.model;
     if (!look) return;
     model.scale.setScalar(look.scale);
-    const b = (n) => model.getObjectByName(n);
+    const b = this.rig.bones;
     // broader shoulders: widen the chest, keep the head its own size
-    const chest = b('DEF-spine003'), neck = b('DEF-neck');
-    if (chest && neck) { chest.scale.set(look.shoulders, 1, look.shoulders); neck.scale.set(1 / look.shoulders, 1, 1 / look.shoulders); }
-    // longer legs: stretch thigh and shin along their length, keep the feet true
-    for (const s of ['L', 'R']) {
-      const th = b('DEF-thigh' + s), sh = b('DEF-shin' + s), ft = b('DEF-foot' + s);
-      if (th) th.scale.set(1, look.limbs, 1);
-      if (sh) sh.scale.set(1, 1, 1);
-      if (ft) ft.scale.set(1, 1 / look.limbs, 1);
+    b.spine_03.scale.set(look.shoulders, 1, look.shoulders);
+    b.neck_01.scale.set(1 / look.shoulders, 1, 1 / look.shoulders);
+    // longer legs: stretch the thighs along their length, keep the feet true
+    for (const s of ['l', 'r']) {
+      b['thigh_' + s].scale.set(1, look.limbs, 1);
+      b['foot_' + s].scale.set(1, 1 / look.limbs, 1);
     }
     for (const h of this.hooks.held) h.scale.setScalar(1 / look.scale);
+  }
+
+  // skin tone and brows from the look; Ibad eyes, blue within blue, as deep as the carrier's spice
+  tintFace() {
+    const look = this.look, R = this.rig;
+    if (!look || !R) return;
+    const ibad = clamp(look.eyes / 1.8, 0, 1);
+    R.eyes.color.set('#ffffff').lerp(IBAD, 0.35 + ibad * 0.5);
+    R.eyes.emissive.copy(IBAD);
+    R.eyes.emissiveIntensity = 0.15 + look.eyes * 0.35;
+    R.brows.color.set(look.brows || '#2a1d16');
   }
 
   // maker hooks: crossed on the back while carried, one in each fist while riding
@@ -715,74 +769,140 @@ export class Runner {
 
   // Swap the procedural body for the skinned, clip-driven one. The costume (hood, mantle, face,
   // harness, reservoir, belt) moves onto proxy frames riding the bones; the cloth follows them.
-  attachRig(gltf) {
-    const S = this.look ? this.look.scale : 0.96; // clip rig is 1.83 m; Ishra is ~1.76 m
-    const model = gltf.scene;
-    model.rotation.y = Math.PI; // clips face +z, the runner faces -z
+  // Wear a skinned body ({ tag, scene, clips } from actors/rig.js). The procedural hood, mantle,
+  // harness and belt move onto proxies that follow its bones; its own face, eyes and brows show
+  // through the hood. Called again to switch bodies when the carrier changes.
+  attachRig(body) {
+    const model = body.scene;
+    if (this.rigHolder) this.root.remove(this.rigHolder);
+    if (!model.userData.dressed) this.dressBody(model);
+    const D = model.userData.dressed;
+    for (const [b, p, q, s] of D.rest) { b.position.copy(p); b.quaternion.copy(q); b.scale.copy(s); }
+    const S = this.look ? this.look.scale : 1;
+    model.rotation.set(0, Math.PI, 0); // the bodies face +z, the runner faces -z
     model.scale.setScalar(S);
-    const bones = {};
-    model.traverse((o) => {
-      if (o.isBone) bones[o.name] = o;
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.frustumCulled = false;
-        // one material over the whole skin: a contrasting joint material is what made the body
-        // read as jointed segments rather than one figure
-        o.material = this.suitMats.skinSuit;
-      }
-    });
-    const need = ['DEF-hips', 'DEF-spine003', 'DEF-neck', 'DEF-head', 'DEF-upper_armL', 'DEF-upper_armR', 'DEF-forearmL', 'DEF-forearmR', 'DEF-handL', 'DEF-handR',
-      'DEF-thighL', 'DEF-shinL', 'DEF-footL', 'DEF-thighR', 'DEF-shinR', 'DEF-footR'];
-    if (need.some((n) => !bones[n])) throw new Error('runner rig is missing bones');
+    const bones = D.bones;
     this.rigHolder = new THREE.Group();
     this.rigHolder.add(model);
     this.root.add(this.rigHolder);
 
-    // the mannequin's own head is replaced by the hooded one: collapse it and follow its motion
-    this.headBone = bones['DEF-head'];
-    this.headFollow = new THREE.Group();
-    this.headFollow.position.copy(this.headBone.position);
-    this.headFollow.quaternion.copy(this.headBone.quaternion);
-    bones['DEF-neck'].add(this.headFollow);
-
-    // proxy frames: in bind pose each matches the procedural part's frame in runner space
+    // proxy frames: in bind pose each sits at a point on the body (model units), upright and
+    // facing the runner's way, scaled with the carrier
     this.root.updateMatrixWorld(true);
     const rootInv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
-    const proxy = (parent, y) => {
+    const proxy = (parent, at, k = 1) => {
       const p = new THREE.Group();
       const parentInRoot = new THREE.Matrix4().multiplyMatrices(rootInv, parent.matrixWorld);
-      p.matrixAutoUpdate = true;
-      new THREE.Matrix4().copy(parentInRoot).invert().multiply(new THREE.Matrix4().makeTranslation(0, y, 0))
-        .decompose(p.position, p.quaternion, p.scale);
+      const want = new THREE.Matrix4().compose(at.clone().multiply(FLIP).multiplyScalar(S), new THREE.Quaternion(), new THREE.Vector3(S * k, S * k, S * k));
+      new THREE.Matrix4().copy(parentInRoot).invert().multiply(want).decompose(p.position, p.quaternion, p.scale);
       parent.add(p);
       return p;
     };
-    const torsoP = proxy(bones['DEF-spine003'], 0.973);
-    const hipsP = proxy(bones['DEF-hips'], 0.92);
-    const headP = proxy(this.headFollow, 1.6);
+    if (this.proxies) for (const p of this.proxies) p.parent && p.parent.remove(p);
+    const torsoP = proxy(bones.spine_03, new THREE.Vector3(0, 1.0, 0), D.torso);
+    const hipsP = proxy(bones.pelvis, new THREE.Vector3(0, 0.955, 0), D.torso);
+    // the hood kit is sized to the head: the procedural skull it was made for is 0.1 m across
+    const fit = D.head.half.x / 0.1;
+    const headP = proxy(bones.Head, D.head.center.clone().setY(D.head.center.y - 0.02 * fit), fit);
+    this.proxies = [torsoP, hipsP, headP];
     for (const o of this.torsoKit) torsoP.add(o);
     for (const o of this.hipKit) hipsP.add(o);
     this.head.position.set(0, 0, 0);
     this.head.rotation.set(0, 0, 0);
     headP.add(this.head);
+    for (const o of [...this.faceParts, ...this.maskParts, ...this.noseTubes]) o.visible = false;
+    // fitted to the real head: it is deeper than the procedural skull, so the hood sits further
+    // forward over the brow
+    this.head.scale.set(1, 1.05, 1.22);
+    this.hood.rotation.x = -0.34;
     this.pivot.visible = false;
     this.clothTorso = torsoP;
     this.clothHead = this.head;
-    this.legBones = [['L'], ['R']].map(([s]) => [bones['DEF-thigh' + s], bones['DEF-shin' + s], bones['DEF-foot' + s]]);
-    this.armBones = [['L'], ['R']].map(([s]) => [bones['DEF-upper_arm' + s], bones['DEF-forearm' + s]]);
+    this.headBone = bones.Head;
+    this.legBones = ['l', 'r'].map((s) => [bones['thigh_' + s], bones['calf_' + s], bones['foot_' + s]]);
+    this.armBones = ['l', 'r'].map((s) => [bones['upperarm_' + s], bones['lowerarm_' + s]]);
+    this.spineBones = [bones.spine_01, bones.spine_02];
 
     const mixer = new THREE.AnimationMixer(model);
     const actions = {};
-    for (const clip of gltf.animations) actions[clip.name] = mixer.clipAction(clip);
-    this.rig = { model, mixer, actions, cur: null, name: '', armsUp: 0, lean: 0 };
+    for (const clip of body.clips) actions[clip.name] = mixer.clipAction(clip);
+    this.rig = { tag: body.tag, model, bones, mixer, actions, cur: null, name: '', armsUp: 0, lean: 0, slide: 0, eyes: D.eyes, brows: D.brows };
     // hooks move to the skinned body: back proxy and the real hand bones
-    this.hands = [bones['DEF-handL'], bones['DEF-handR']];
+    this.hands = [bones.hand_l, bones.hand_r];
     const prev = this.hooks;
     this.buildHooks();
     this.setHooks(prev.count, prev.riding);
-    if (this.look) this.applyProportions();
+    if (this.look) { this.applyProportions(); this.tintFace(); }
     this.landT = 0;
     this.kin.ready = false; // re-seat the cloth on the new frames
+  }
+
+  // One-time preparation of a body: split its skin into stillsuit, bare face, gloves and boots by
+  // which bones carry each triangle, and measure the head and chest so the kit can be fitted.
+  dressBody(model) {
+    const bones = {};
+    model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+    const need = ['root', 'pelvis', 'spine_01', 'spine_02', 'spine_03', 'neck_01', 'Head', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r',
+      'hand_l', 'hand_r', 'thigh_l', 'calf_l', 'foot_l', 'thigh_r', 'calf_r', 'foot_r'];
+    if (need.some((n) => !bones[n])) throw new Error('carrier body is missing bones');
+    model.updateMatrixWorld(true);
+    const M = this.suitMats;
+    const D = { bones, rest: Object.values(bones).map((b) => [b, b.position.clone(), b.quaternion.clone(), b.scale.clone()]) };
+    const v = new THREE.Vector3();
+    model.traverse((o) => {
+      if (!o.isSkinnedMesh) return;
+      o.castShadow = true;
+      o.frustumCulled = false;
+      const name = o.material.name || '';
+      if (/Eye/.test(name)) { D.eyes = o.material = o.material.clone(); return; }
+      if (/Hair/.test(name)) { D.brows = o.material = o.material.clone(); return; }
+      // the body: classify each vertex by the bones that carry it
+      const geo = o.geometry, sk = o.skeleton;
+      const idx = (n) => sk.bones.indexOf(bones[n]);
+      const head = idx('Head');
+      const hands = new Set(sk.bones.map((b, i) => (/^(hand|index|middle|ring|pinky|thumb)_/.test(b.name) ? i : -1)).filter((i) => i >= 0));
+      const feet = new Set(['foot_l', 'foot_r', 'ball_l', 'ball_r'].map(idx));
+      const calves = new Set(['calf_l', 'calf_r'].map(idx));
+      const si = geo.attributes.skinIndex, sw = geo.attributes.skinWeight, pos = geo.attributes.position;
+      sk.update();
+      const cls = new Uint8Array(pos.count); // 0 suit, 1 face, 2 glove, 3 boot
+      const headBox = new THREE.Box3(), chest = new THREE.Box3();
+      for (let i = 0; i < pos.count; i++) {
+        let wHead = 0, wHand = 0, wFoot = 0, wCalf = 0;
+        for (let k = 0; k < 4; k++) {
+          const j = si.getComponent(i, k), w = sw.getComponent(i, k);
+          if (j === head) wHead += w;
+          if (hands.has(j)) wHand += w;
+          if (feet.has(j)) wFoot += w;
+          if (calves.has(j)) wCalf += w;
+        }
+        v.fromBufferAttribute(pos, i);
+        o.applyBoneTransform(i, v);
+        v.applyMatrix4(o.matrixWorld);
+        if (wHead > 0.5) { cls[i] = 1; headBox.expandByPoint(v); }
+        else if (wHand > 0.5) cls[i] = 2;
+        else if (wFoot > 0.4 || (wCalf > 0.5 && v.y < 0.36)) cls[i] = 3;
+        if (v.y > 1.15 && v.y < 1.35 && Math.abs(v.x) < 0.3) chest.expandByPoint(v);
+      }
+      const index = geo.index.array, buckets = [[], [], [], []];
+      for (let t = 0; t < index.length; t += 3) {
+        const a = cls[index[t]], b = cls[index[t + 1]], c = cls[index[t + 2]];
+        buckets[a === b || a === c ? a : b === c ? b : 0].push(index[t], index[t + 1], index[t + 2]);
+      }
+      const sorted = new index.constructor(index.length);
+      let at = 0;
+      geo.clearGroups();
+      buckets.forEach((list, m) => { sorted.set(list, at); geo.addGroup(at, list.length, m); at += list.length; });
+      geo.setIndex(new THREE.BufferAttribute(sorted, 1));
+      M.faceSkin.map = o.material.map;
+      M.faceSkin.normalMap = o.material.normalMap;
+      M.faceSkin.needsUpdate = true;
+      o.material = [M.skinSuit, M.faceSkin, M.leather, M.boot];
+      D.head = { center: headBox.getCenter(new THREE.Vector3()), half: headBox.getSize(new THREE.Vector3()).multiplyScalar(0.5) };
+      // the harness and belt were cut for a broad mannequin chest; slimmer bodies get them taken in
+      D.torso = clamp((chest.max.x - chest.min.x) / 0.38, 0.8, 1.1);
+    });
+    model.userData.dressed = D;
   }
 
   playClip(name, { timeScale = 1, once = false, fade = 0.18, startAt = 0 } = {}) {
@@ -818,7 +938,9 @@ export class Runner {
         if (this.modeT < 0.16) this.playClip('Jump_Start', { timeScale: 2.4, once: true, fade: 0.06, startAt: 0.5 });
         else this.playClip('Jump_Loop', { timeScale: 1.2, fade: 0.16 });
         break;
-      case 'slide': this.playClip('Roll', { timeScale: 1.47 / 0.8, once: true, fade: 0.08 }); break;
+      // a feet-first slide, posed below over a low crouch (the clip set's Roll tumbles the body
+      // head over heels, which reads as the torso spinning through the legs)
+      case 'slide': this.playClip('Crouch_Idle_Loop', { fade: 0.08 }); break;
       case 'fly': this.playClip('Jump_Loop', { timeScale: 0.6, fade: 0.25 }); arms = 1; break;
       case 'ride': this.playClip('Crouch_Idle_Loop', { fade: 0.3 }); arms = 0.85; break;
       case 'dead': this.playClip('Death01', { once: true, fade: 0.15 }); break;
@@ -836,10 +958,9 @@ export class Runner {
         this.aimBone(fore, this._v.set(side * 0.08, 1, -0.05), R.armsUp);
       }
     }
-    // the hooded head follows the (collapsed) mannequin head
-    this.headBone.scale.setScalar(0.001);
-    this.headFollow.position.copy(this.headBone.position);
-    this.headFollow.quaternion.copy(this.headBone.quaternion);
+    R.slide = damp(R.slide, mode === 'slide' ? 1 : 0, mode === 'slide' ? 16 : 9, dt);
+    this.rigHolder.position.y = 0;
+    if (R.slide > 0.01) this.slidePose(R.slide);
     // lean into lane changes and corners; turn the body toward where it is heading
     const upright = mode === 'slide' || mode === 'dead' || mode === 'ride';
     R.lean = damp(R.lean, upright ? 0 : clamp(-lateral * 0.24 + yawRate * 0.12, -0.42, 0.42), 9, dt);
@@ -847,15 +968,26 @@ export class Runner {
     this.rigHolder.rotation.set(0, R.face, R.lean);
     // lean the spine forward with speed; keep the head level, eyes on the trail ahead
     const run = mode === 'run' ? clamp((sp - 12) / 30, 0, 1) : mode === 'jump' ? 0.3 : 0;
-    R.fwd = damp(R.fwd || 0, run * 0.22, 6, dt);
+    R.fwd = damp(R.fwd || 0, run * 0.12, 6, dt); // the sprint clip already leans; this adds the last few degrees at speed
     if (R.fwd > 0.005) {
       this.root.updateMatrixWorld(true);
       const right = this._w.set(1, 0, 0).applyQuaternion(this.root.quaternion);
-      this.spineBones = this.spineBones || ['DEF-spine001', 'DEF-spine002'].map((n) => this.rig.model.getObjectByName(n)).filter(Boolean);
-      for (const b of this.spineBones) b.rotateOnWorldAxis(right, -R.fwd * 0.5);
-      this.headFollow.rotateOnWorldAxis(right, R.fwd * 0.9);
-      this.headFollow.rotateOnWorldAxis(this._v.set(0, 0, -1).applyQuaternion(this.root.quaternion), R.lean * 0.6);
+      for (const b of this.spineBones) rotateBoneWorld(b, right, -R.fwd * 0.5);
+      rotateBoneWorld(this.headBone, right, R.fwd * 0.9);
+      rotateBoneWorld(this.headBone, this._v.set(0, 0, -1).applyQuaternion(this.root.quaternion), R.lean * 0.6);
     }
+  }
+
+  // Baseball slide: hips dropped to the sand and reclined, the right leg out straight with the toes
+  // up, the left tucked under it, one hand trailing behind and the other up for balance. Directions
+  // are in runner space (-z ahead, +x right), blended over the clip by w.
+  slidePose(w) {
+    const b = this.rig.bones, S = this.rig.model.scale.x;
+    this.root.updateMatrixWorld(true);
+    const hip = this._w.setFromMatrixPosition(b.pelvis.matrixWorld).applyMatrix4(this._inv.copy(this.root.matrixWorld).invert());
+    this.rigHolder.position.y = (0.32 * S - hip.y) * w;
+    this.root.updateMatrixWorld(true);
+    for (const [bone, x, y, z] of SLIDE) this.aimBone(b[bone], this._v.set(x, y, z), w);
   }
 
   // rotate a bone so its length axis (+y) points along a runner-space direction, blended by w

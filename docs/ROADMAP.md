@@ -74,5 +74,6 @@ effort. Each names where it would live, so anyone can pick one up. See
   them, to cut garbage collection on long runs.
 - **Play analytics.** Vercel Web Analytics custom events for run length, death cause and
   carrier, to tune `content/difficulty.js` against real play.
-- **Higher-fidelity body.** Swap the skinned mannequin for a CC0 character base mesh with real
-  clothing. `actors/rig.js` loads any GLB with the same skeleton and clip names.
+- **More bodies and hair.** The free Universal Base Characters pack has two bodies; the paid
+  Source pack adds Regular and Teen builds, and 20 hairstyles rig to the same Head bone. Any body on
+  the same skeleton drops into `BODIES` in `actors/rig.js` (build it with `scripts/build-carriers.mjs`).

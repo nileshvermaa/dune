@@ -26,6 +26,10 @@ describe('carriers', () => {
     }
   });
 
+  it('each wears one of the skinned bodies', () => {
+    for (const c of CHARACTERS) expect(['f', 'm'], c.id).toContain(c.look.body);
+  });
+
   it('only use rule modifiers the game understands', () => {
     const known = ['drain', 'crashCost', 'signRate', 'breakBonus', 'magnet', 'vision', 'hookWindow', 'hookSteps',
       'rideTime', 'hooks', 'doubleJump', 'slide', 'shieldEvery', 'stoneWater'];

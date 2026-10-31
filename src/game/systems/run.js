@@ -1,6 +1,6 @@
 import { clamp, damp } from '../../engine/noise.js';
 import { LANE_W } from '../../world/layout.js';
-import { speedAt, wormsignRate } from '../../content/difficulty.js';
+import { speedAt, wormsignPerMetre, straightLimit } from '../../content/difficulty.js';
 import { zoneAt } from '../../content/zones.js';
 import { waypointAt } from '../../content/story.js';
 import { POWERUPS } from '../../content/powerups.js';
@@ -125,15 +125,18 @@ export const RunSystem = {
     if (p.water < 25) this.beat('lowWater');
     if (p.water <= 0) return this.die('thirst');
 
-    // wormsign: steady footsteps on open sand call the Maker
-    // the whole desert is open sand now; only the old paving is safe
+    // wormsign: footsteps on open sand call the Maker, and a straight line most of all. Every metre
+    // run without changing lane adds to p.straight, and the longer the line the faster the sign
+    // climbs (content/difficulty.js). Only the old paving is safe.
     p.onSand = !this.track.onRock(seg, p.s) && !riding && p.fly <= 0;
     if (p.onSand) {
       this.beat('firstSand');
       if (p.shield) this.beat('shieldSand');
-      let rate = wormsignRate(p.speed, p.runDist) * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1) * (this.mods.signRate || 1);
+      p.straight += ds;
+      if (p.straight > straightLimit(p.runDist) * 0.55) this.beat('tooStraight');
+      let rate = wormsignPerMetre(p.straight, p.runDist) * (p.shield ? 1.5 : 1) * (p.trance > 0 ? 0.5 : 1) * (this.mods.signRate || 1);
       if (p.lure > 0 || p.silent > 0) rate = 0;
-      p.sign = Math.min(100, p.sign + rate * gdt);
+      p.sign = Math.min(100, p.sign + rate * ds);
       if (p.sign > 60 && !p.beats.wormRising) this.audio.braam(0.7);
       if (p.sign > 60) this.beat('wormRising');
       if (p.sign >= 100 && !p.qte) {
@@ -141,6 +144,7 @@ export const RunSystem = {
         else return this.die('worm');
       }
     } else if (!p.qte) {
+      p.straight = 0;
       p.sign = Math.max(0, p.sign - 35 * gdt);
       // the old stones remember Zara: she drinks from them
       if (this.mods.stoneWater && !riding && p.fly <= 0) p.water = Math.min(100, p.water + this.mods.stoneWater * gdt);

@@ -52,7 +52,7 @@ export class Game {
     // footfalls come from the animated feet; sand crunches, stone taps
     this.runner.onStep = (side) => this.audio.footstep(this.p.onSand ? 'sand' : 'stone', this.p.speed, side);
     // clip-driven skinned body; the procedural runner stays if it cannot load
-    loadRunnerRig().then((gltf) => this.runner.attachRig(gltf)).catch((err) => console.warn('Runner rig unavailable, using procedural body', err));
+    loadRunnerRig().then((rigs) => this.runner.useRigs(rigs)).catch((err) => console.warn('Runner rig unavailable, using procedural body', err));
     this.blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex.glow, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
     this.blob.rotation.x = -Math.PI / 2;
     this.blob.renderOrder = 3;
@@ -156,8 +156,8 @@ export class Game {
       score: 0, spice: 0, mult: 1, shield: false, trance: 0, fly: 0, invuln: 0,
       stumbleT: 0, wormGap: 45, combo: 0, lastPickup: 0, stepT: 0,
       zoneIndex: 0, milestone: 0, spiceMilestone: 0, tips: 0, tipFor: null, visualYaw: 0, alive: true,
-      water: 100, sign: 0, thumpers: 1, hooks: 0, vision: 0, ride: 0, rideOff: 0, lure: 0,
-      lastBreak: -10, lastGap: 0, onSand: false, chapter: 0, visits: {}, beats: {},
+      water: 100, sign: 0, straight: 0, thumpers: 1, hooks: 0, vision: 0, ride: 0, rideOff: 0, lure: 0,
+      lastBreak: -10, lastGap: 0, prevGap: 0, onSand: false, chapter: 0, visits: {}, beats: {},
       strides: [], rides: 0, journal: [],
       silent: 0, seal: 0, rush: 0, qte: null, balanceT: 0, turnWarned: false, wp: 0,
       abilityCd: 0, shieldCd: 0, airJumped: false,

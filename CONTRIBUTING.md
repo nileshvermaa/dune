@@ -53,6 +53,7 @@ Everything is procedural except what is credited in `public/textures/CREDITS.md`
 `public/models/CREDITS.md`. New assets must be CC0 or similarly permissive: add them to the
 matching `CREDITS.md` and to `public/THIRD_PARTY_LICENSES.txt`. Keep files small (WebP for
 textures, Meshopt-compressed GLB for models) — the whole game should load fast on a phone.
+`scripts/build-carriers.mjs` shows the pipeline used for the character bodies.
 
 ## Commit messages
 
