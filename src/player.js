@@ -162,6 +162,7 @@ export class Runner {
     add(knife, new THREE.CylinderGeometry(0.022, 0.012, 0.24, 8), leather, 0, -0.1, 0);
     add(knife, new THREE.CylinderGeometry(0.015, 0.018, 0.09, 8), bone, 0, 0.06, 0);
     add(knife, new THREE.SphereGeometry(0.022, 8, 6), bone, 0, 0.11, 0);
+    this.hipKit = hips.children.slice(1); // belt, pouches, knife: worn over the skinned body too
 
     /* ---- legs: thigh 0.43, shin 0.42, ankle 0.10 above the sole ---- */
     this.legs = [];
@@ -203,6 +204,7 @@ export class Runner {
     const chest = add(torso, lathe([[0.001, -0.02], [0.13, 0.0], [0.145, 0.1], [0.18, 0.25], [0.19, 0.34], [0.168, 0.42], [0.1, 0.47], [0.05, 0.5], [0.001, 0.5]], 24), suit);
     chest.scale.set(1, 1, 0.72);
     ribMesh(torso, ribs((t) => 0.148 + t * 0.035, 0.07, 0.29, 4, 0.72));
+    const kitFrom = torso.children.length;
     add(torso, rbox(0.2, 0.16, 0.04, 0.02), rib, 0, 0.3, -0.12);
     add(torso, rbox(0.012, 0.3, 0.012, 0.005), suitDark, 0, 0.17, -0.128);
     for (const side of [-1, 1]) {
@@ -221,6 +223,8 @@ export class Runner {
       add(torso, new THREE.TubeGeometry(curve, 16, 0.012, 6, false), rib);
     }
     add(torso, new THREE.TorusGeometry(0.06, 0.018, 8, 18), rib, 0, 0.5, 0, Math.PI / 2);
+    this.torsoKit = torso.children.slice(kitFrom); // chest plate, harness, reservoir, tubes, collar
+    this.suitMats = { suit, suitDark, rib, leather };
 
     /* ---- head, hood & mantle ---- */
     const head = new THREE.Group();
@@ -320,6 +324,11 @@ export class Runner {
     this._inv = new THREE.Matrix4();
     this._tInv = new THREE.Matrix4();
     this.colliders = Array.from({ length: 8 }, () => new THREE.Vector3());
+    // frames the cloth hangs from; attachRig() swaps them for proxies on the skinned body
+    this.clothTorso = this.torso;
+    this.clothHead = this.head;
+    this.rig = null;
+    this.landT = 0;
   }
 
   buildCloak() {
@@ -532,7 +541,7 @@ export class Runner {
     const mode = st.mode;
     if (mode !== this.mode) {
       if (mode === 'jump') this.lead = Math.cos(this.phase + 0.35) > 0 ? 1 : -1;
-      if (this.mode === 'jump' && (mode === 'run' || mode === 'stumble')) this.land = 1;
+      if (this.mode === 'jump' && (mode === 'run' || mode === 'stumble')) { this.land = 1; this.landT = 0.26; }
       this.mode = mode;
       this.modeT = 0;
     }
@@ -569,10 +578,23 @@ export class Runner {
     if (st.air) velL.z -= st.air;
 
     /* ---- pose ---- */
-    const target = this.pose(mode, sp, st.vy || 0, t);
-    // lean into lane changes
     const lateral = clamp(velL.x / 14, -1, 1);
-    target.tilt += 0;
+    if (this.rig) this.animateRig(dt, mode, sp, st.vy || 0, lateral);
+    else this.animateProcedural(dt, mode, sp, st.vy || 0, t, lateral);
+
+    root.updateMatrixWorld(true);
+    this.simulateCloth(dt, velL, accL, dYaw, jumped);
+
+    const su = this.shield.material.uniforms;
+    su.uTime.value = t;
+    su.uAlpha.value = damp(su.uAlpha.value, this.shieldOn ? 1 : 0, 8, dt);
+    this.shield.visible = su.uAlpha.value > 0.02;
+    this.shield.scale.setScalar(1 + Math.sin(t * 5) * 0.02);
+  }
+
+  animateProcedural(dt, mode, sp, vy, t, lateral) {
+    const target = this.pose(mode, sp, vy, t);
+    // lean into lane changes
     target.lean = mode === 'slide' || mode === 'dead' ? 0 : -lateral * 0.22;
     target.torsoRoll += lateral * 0.08;
     target.headZ = -target.lean * 0.6;
@@ -606,15 +628,139 @@ export class Runner {
     // breathing
     const breath = 1 + Math.sin(t * (mode === 'idle' ? 1.6 : 5)) * (mode === 'idle' ? 0.012 : 0.02);
     this.torso.scale.set(1, 1, breath);
+  }
 
-    root.updateMatrixWorld(true);
-    this.simulateCloth(dt, velL, accL, dYaw, jumped);
+  /* ---------------- skinned rig (motion clips) ---------------- */
 
-    const su = this.shield.material.uniforms;
-    su.uTime.value = t;
-    su.uAlpha.value = damp(su.uAlpha.value, this.shieldOn ? 1 : 0, 8, dt);
-    this.shield.visible = su.uAlpha.value > 0.02;
-    this.shield.scale.setScalar(1 + Math.sin(t * 5) * 0.02);
+  // Swap the procedural body for the skinned, clip-driven one. The costume (hood, mantle, face,
+  // harness, reservoir, belt) moves onto proxy frames riding the bones; the cloth follows them.
+  attachRig(gltf) {
+    const S = 0.96; // clip rig is 1.83 m; Ishra is ~1.76 m
+    const model = gltf.scene;
+    model.rotation.y = Math.PI; // clips face +z, the runner faces -z
+    model.scale.setScalar(S);
+    const bones = {};
+    model.traverse((o) => {
+      if (o.isBone) bones[o.name] = o;
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.frustumCulled = false;
+        o.material = o.material.name === 'M_Joints' ? this.suitMats.suitDark : this.suitMats.suit;
+      }
+    });
+    const need = ['DEF-hips', 'DEF-spine003', 'DEF-neck', 'DEF-head', 'DEF-upper_armL', 'DEF-upper_armR', 'DEF-forearmL', 'DEF-forearmR',
+      'DEF-thighL', 'DEF-shinL', 'DEF-footL', 'DEF-thighR', 'DEF-shinR', 'DEF-footR'];
+    if (need.some((n) => !bones[n])) throw new Error('runner rig is missing bones');
+    this.rigHolder = new THREE.Group();
+    this.rigHolder.add(model);
+    this.root.add(this.rigHolder);
+
+    // the mannequin's own head is replaced by the hooded one: collapse it and follow its motion
+    this.headBone = bones['DEF-head'];
+    this.headFollow = new THREE.Group();
+    this.headFollow.position.copy(this.headBone.position);
+    this.headFollow.quaternion.copy(this.headBone.quaternion);
+    bones['DEF-neck'].add(this.headFollow);
+
+    // proxy frames: in bind pose each matches the procedural part's frame in runner space
+    this.root.updateMatrixWorld(true);
+    const rootInv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    const proxy = (parent, y) => {
+      const p = new THREE.Group();
+      const parentInRoot = new THREE.Matrix4().multiplyMatrices(rootInv, parent.matrixWorld);
+      p.matrixAutoUpdate = true;
+      new THREE.Matrix4().copy(parentInRoot).invert().multiply(new THREE.Matrix4().makeTranslation(0, y, 0))
+        .decompose(p.position, p.quaternion, p.scale);
+      parent.add(p);
+      return p;
+    };
+    const torsoP = proxy(bones['DEF-spine003'], 0.973);
+    const hipsP = proxy(bones['DEF-hips'], 0.92);
+    const headP = proxy(this.headFollow, 1.6);
+    for (const o of this.torsoKit) torsoP.add(o);
+    for (const o of this.hipKit) hipsP.add(o);
+    this.head.position.set(0, 0, 0);
+    this.head.rotation.set(0, 0, 0);
+    headP.add(this.head);
+    this.pivot.visible = false;
+    this.clothTorso = torsoP;
+    this.clothHead = this.head;
+    this.legBones = [['L'], ['R']].map(([s]) => [bones['DEF-thigh' + s], bones['DEF-shin' + s], bones['DEF-foot' + s]]);
+    this.armBones = [['L'], ['R']].map(([s]) => [bones['DEF-upper_arm' + s], bones['DEF-forearm' + s]]);
+
+    const mixer = new THREE.AnimationMixer(model);
+    const actions = {};
+    for (const clip of gltf.animations) actions[clip.name] = mixer.clipAction(clip);
+    this.rig = { model, mixer, actions, cur: null, name: '', armsUp: 0, lean: 0 };
+    this.landT = 0;
+    this.kin.ready = false; // re-seat the cloth on the new frames
+  }
+
+  playClip(name, { timeScale = 1, once = false, fade = 0.18 } = {}) {
+    const R = this.rig;
+    if (R.name !== name) {
+      const next = R.actions[name];
+      next.reset();
+      next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+      next.clampWhenFinished = once;
+      next.enabled = true;
+      next.setEffectiveWeight(1);
+      if (R.cur) next.crossFadeFrom(R.cur, fade, false);
+      next.play();
+      R.cur = next;
+      R.name = name;
+    }
+    R.cur.timeScale = timeScale;
+  }
+
+  animateRig(dt, mode, sp, vy, lateral) {
+    const R = this.rig;
+    this.landT = Math.max(0, this.landT - dt); // set on touchdown in update()
+    let arms = 0;
+    switch (mode) {
+      case 'run':
+        if (this.landT > 0) this.playClip('Jump_Land', { timeScale: 2.2, once: true, fade: 0.06 });
+        else this.playClip('Sprint_Loop', { timeScale: clamp(0.95 + (sp - 12) * 0.035, 1, 1.7), fade: 0.14 });
+        break;
+      case 'stumble': this.playClip('Hit_Chest', { once: true, fade: 0.08 }); break;
+      case 'jump': this.playClip('Jump_Loop', { timeScale: 1.2, fade: 0.1 }); break;
+      case 'slide': this.playClip('Roll', { timeScale: 1.47 / 0.8, once: true, fade: 0.08 }); break;
+      case 'fly': this.playClip('Jump_Loop', { timeScale: 0.6, fade: 0.25 }); arms = 1; break;
+      case 'ride': this.playClip('Crouch_Idle_Loop', { fade: 0.3 }); arms = 0.85; break;
+      case 'dead': this.playClip('Death01', { once: true, fade: 0.15 }); break;
+      default: this.playClip('Idle_Loop', { fade: 0.3 });
+    }
+    R.mixer.update(dt);
+
+    // hands up: gripping the ornithopter skid, or the Maker hooks while riding
+    R.armsUp = damp(R.armsUp, arms, 8, dt);
+    if (R.armsUp > 0.01) {
+      this.root.updateMatrixWorld(true);
+      for (const [i, [upper, fore]] of this.armBones.entries()) {
+        const side = i === 0 ? -1 : 1;
+        this.aimBone(upper, this._v.set(side * 0.18, 1, -0.12), R.armsUp);
+        this.aimBone(fore, this._v.set(side * 0.08, 1, -0.05), R.armsUp);
+      }
+    }
+    // the hooded head follows the (collapsed) mannequin head
+    this.headBone.scale.setScalar(0.001);
+    this.headFollow.position.copy(this.headBone.position);
+    this.headFollow.quaternion.copy(this.headBone.quaternion);
+    // lean into lane changes
+    R.lean = damp(R.lean, mode === 'slide' || mode === 'dead' ? 0 : -lateral * 0.22, 9, dt);
+    this.rigHolder.rotation.z = R.lean;
+  }
+
+  // rotate a bone so its length axis (+y) points along a runner-space direction, blended by w
+  aimBone(bone, dir, w) {
+    bone.updateWorldMatrix(true, false);
+    const q = bone.getWorldQuaternion(new THREE.Quaternion());
+    const cur = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    const want = dir.clone().normalize().transformDirection(this.root.matrixWorld);
+    const world = new THREE.Quaternion().setFromUnitVectors(cur, want).multiply(q);
+    const parentQ = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+    bone.quaternion.slerp(parentQ.invert().multiply(world), w);
+    bone.updateWorldMatrix(false, true);
   }
 
   /* ---------------- cloth ---------------- */
@@ -622,9 +768,9 @@ export class Runner {
   simulateCloth(dt, velL, accL, dYaw, reset) {
     const root = this.root;
     const inv = this._inv.copy(root.matrixWorld).invert();
-    const toRoot = this._m.multiplyMatrices(inv, this.torso.matrixWorld); // torso -> root space
+    const toRoot = this._m.multiplyMatrices(inv, this.clothTorso.matrixWorld); // torso -> root space
     const tInv = this._tInv.copy(toRoot).invert();
-    const headToRoot = new THREE.Matrix4().multiplyMatrices(inv, this.head.matrixWorld);
+    const headToRoot = new THREE.Matrix4().multiplyMatrices(inv, this.clothHead.matrixWorld);
     const v = this._v;
     const cl = this.cloth, C = this.cloakC;
 
@@ -653,11 +799,22 @@ export class Runner {
     // colliders in root space: hip line, knees, shins, feet
     const cols = this.colliders;
     let ci = 0;
-    for (const leg of this.legs) {
-      cols[ci++].set(0, -0.2, 0).applyMatrix4(leg.thigh.matrixWorld).applyMatrix4(inv);
-      cols[ci++].setFromMatrixPosition(leg.knee.matrixWorld).applyMatrix4(inv);
-      cols[ci++].set(0, -0.22, 0).applyMatrix4(leg.knee.matrixWorld).applyMatrix4(inv);
-      cols[ci++].setFromMatrixPosition(leg.foot.matrixWorld).applyMatrix4(inv);
+    if (this.rig) {
+      for (const [thigh, shin, foot] of this.legBones) {
+        const a = cols[ci].setFromMatrixPosition(thigh.matrixWorld).applyMatrix4(inv);
+        const b = cols[ci + 1].setFromMatrixPosition(shin.matrixWorld).applyMatrix4(inv);
+        const c = cols[ci + 3].setFromMatrixPosition(foot.matrixWorld).applyMatrix4(inv);
+        cols[ci + 2].copy(b).lerp(c, 0.5);
+        a.lerp(b, 0.5);
+        ci += 4;
+      }
+    } else {
+      for (const leg of this.legs) {
+        cols[ci++].set(0, -0.2, 0).applyMatrix4(leg.thigh.matrixWorld).applyMatrix4(inv);
+        cols[ci++].setFromMatrixPosition(leg.knee.matrixWorld).applyMatrix4(inv);
+        cols[ci++].set(0, -0.22, 0).applyMatrix4(leg.knee.matrixWorld).applyMatrix4(inv);
+        cols[ci++].setFromMatrixPosition(leg.foot.matrixWorld).applyMatrix4(inv);
+      }
     }
     const ground = root.position.y > -1 ? -root.position.y + 0.03 : -1e9;
 

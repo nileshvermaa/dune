@@ -19,6 +19,7 @@ import { ZONES, zoneAt, distToZone } from './zones.js';
 import { PROLOGUE, BEATS, DEATHS, chapterFor, roman, saying } from './story.js';
 import { makeThumper } from './props.js';
 import { loadPhotoTextures, updatePhotoTextures } from './materials.js';
+import { loadRunnerRig } from './rig.js';
 
 const ZONE_LABELS = ['Erg', 'Wall', 'Sietch', 'Spice', 'Storm'];
 
@@ -95,6 +96,8 @@ export class Game {
     this.sky = new Sky(this.scene);
     this.runner = new Runner();
     this.scene.add(this.runner.root);
+    // clip-driven skinned body; the procedural runner stays if it cannot load
+    loadRunnerRig().then((gltf) => this.runner.attachRig(gltf)).catch((err) => console.warn('Runner rig unavailable, using procedural body', err));
     this.blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex.glow, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
     this.blob.rotation.x = -Math.PI / 2;
     this.blob.renderOrder = 3;
