@@ -65,5 +65,25 @@ export function attachDevtools(g) {
     return { dist: Math.round(g.p.runDist), zone: g.p.seg.zone.id, state: st };
   };
 
-  Object.assign(window, { __game: g, __bot: bot, __sim: sim });
+  // Close-up of the runner in a given pose, for inspecting the model and animation.
+  // phase: run-cycle phase in radians; yaw: camera orbit angle (0 = behind, PI = front); air: simulated airspeed for the cloth.
+  const studio = (mode = 'run', { phase = 0, yaw = 2.4, dist = 3.2, height = 1.1, speed = 20, vy = 2, look = 0.85, air = mode === 'idle' ? 0 : speed } = {}) => {
+    if (g.state === 'title' || g.state === 'over') g.start();
+    g.state = 'paused';
+    g.app.classList.remove('cinema', 'chaptering');
+    for (const id of ['pause', 'hud', 'narration', 'zone-banner', 'tip']) document.getElementById(id).classList.add('hidden');
+    const r = g.runner;
+    for (let i = 0; i < 40; i++) {
+      r.phase = phase - (40 - i) * 0.0001;
+      r.update(1 / 30, { speed, mode, vy, air });
+    }
+    const c = r.root.position, yw = r.root.rotation.y + yaw;
+    g.camera.position.set(c.x + Math.sin(yw) * dist, c.y + height, c.z + Math.cos(yw) * dist);
+    g.camera.lookAt(c.x, c.y + look, c.z);
+    g.camera.fov = 35;
+    g.camera.updateProjectionMatrix();
+    return mode;
+  };
+
+  Object.assign(window, { __game: g, __bot: bot, __sim: sim, __studio: studio });
 }
