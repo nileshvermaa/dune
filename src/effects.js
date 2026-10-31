@@ -211,6 +211,87 @@ void main() {
 
 // The Coriolis storm front: a towering billowing wall of sand that rises on the horizon
 // as the runner approaches the storm biome.
+// Wormsign: a ridge of sand that travels over a worm swimming just beneath the surface, piles up
+// where its back breaks through, and pushes a bow wave ahead of the head. Drawn with the terrain
+// material so it reads as the desert floor itself being shouldered aside.
+const BOW = 4; // rows extrapolated ahead of the head
+export class SandMound {
+  constructor(scene, material, rows = 40, across = 13) {
+    this.rows = rows + BOW;
+    this.across = across;
+    const n = this.rows * across;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage));
+    const idx = [];
+    for (let r = 0; r < this.rows - 1; r++) {
+      for (let a = 0; a < across - 1; a++) {
+        const i = r * across + a;
+        idx.push(i, i + across, i + 1, i + 1, i + across, i + across + 1);
+      }
+    }
+    g.setIndex(idx);
+    this.mesh = new THREE.Mesh(g, material);
+    this.mesh.frustumCulled = false;
+    this.mesh.receiveShadow = true;
+    this.mesh.visible = false;
+    scene.add(this.mesh);
+    this.bed = new THREE.Color('#a8774c');
+    this.crest = new THREE.Color('#d3a271');
+    this._c = new THREE.Color();
+  }
+
+  // surfaceAt(x, z) -> ground height; strength 0..1 fades the whole effect
+  update(model, surfaceAt, strength) {
+    const vis = strength > 0.02;
+    this.mesh.visible = vis;
+    if (!vis) return;
+    const pts = model.points, cnt = model.count, R = model.radius, A = this.across;
+    const pos = this.mesh.geometry.attributes.position.array;
+    const col = this.mesh.geometry.attributes.color.array;
+    const uv = this.mesh.geometry.attributes.uv.array;
+    const c = this._c;
+    for (let row = 0; row < this.rows; row++) {
+      const i = row - BOW; // spine index; negative rows run ahead of the head
+      const si = Math.max(0, Math.min(cnt, i));
+      const a = pts[Math.max(0, si - 1)], b = pts[Math.min(cnt, si + 1)];
+      let tx = a.x - b.x, tz = a.z - b.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      tx /= tl; tz /= tl;
+      const sx = -tz, sz = tx; // across the body
+      const ahead = Math.max(0, -i) * model.segLen * 0.8;
+      const px = pts[si].x + tx * ahead, pz = pts[si].z + tz * ahead;
+      const r = R * (1 - Math.pow(si / cnt, 2) * 0.55);
+      const halfW = r * 2.7;
+      const sL = surfaceAt(px - sx * halfW, pz - sz * halfW), s0 = surfaceAt(px, pz), sR = surfaceAt(px + sx * halfW, pz + sz * halfW);
+      const top = pts[si].y + r;
+      const depth = s0 - top;
+      // buried close under the skin: a swelling ridge; broken through: sand heaped along the flanks
+      let h = depth > 0 ? r * 0.6 * Math.max(0, 1 - depth / (r * 2.4)) : r * 0.42;
+      if (i < 0) h *= (1 + i / (BOW + 1)) * 0.9; // the bow wave tapers out ahead
+      h *= strength * Math.min(1, (cnt - si) / 6); // and toward the buried tail
+      for (let k = 0; k < A; k++) {
+        const u = (k / (A - 1)) * 2 - 1;
+        const bell = Math.exp(-(u * 1.9) * (u * 1.9));
+        const ground = u < 0 ? s0 + (sL - s0) * -u : s0 + (sR - s0) * u;
+        const y = ground + h * bell - 0.14 * (1 - bell); // feathered edges tuck under the terrain
+        const x = px + sx * u * halfW, z = pz + sz * u * halfW;
+        const v = row * A + k;
+        pos[v * 3] = x; pos[v * 3 + 1] = y; pos[v * 3 + 2] = z;
+        c.copy(this.bed).lerp(this.crest, bell * Math.min(1, h / (r * 0.4)) * 0.55);
+        col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
+        uv[v * 2] = x / 6; uv[v * 2 + 1] = z / 6;
+      }
+    }
+    const g = this.mesh.geometry;
+    g.attributes.position.needsUpdate = true;
+    g.attributes.color.needsUpdate = true;
+    g.attributes.uv.needsUpdate = true;
+    g.computeVertexNormals();
+  }
+}
+
 export class StormWall {
   constructor(scene) {
     this.uniforms = {

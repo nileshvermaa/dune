@@ -12,7 +12,7 @@ import { Track, LANE_W, DECK_HALF, YAWS, speedAt } from './track.js';
 import { Sky, installHeightFog } from './sky.js';
 import { Runner } from './player.js';
 import { ChaserWorm, BreachWorm, DevourWorm } from './worm.js';
-import { DustField, ParticlePool, StormWall } from './effects.js';
+import { DustField, ParticlePool, StormWall, SandMound } from './effects.js';
 import { AudioEngine } from './audio.js';
 import { Input } from './input.js';
 import { ZONES, zoneAt, distToZone } from './zones.js';
@@ -135,6 +135,10 @@ export class Game {
     this.blob.renderOrder = 3;
     this.scene.add(this.blob);
     this.chaser = new ChaserWorm(this.scene, this.track);
+    // worm sand gets its own pool so it never starves the ambient dust
+    this.sandPool = new ParticlePool(this.scene, 2400, false);
+    this.mound = new SandMound(this.scene, this.terrain.material);
+    this.moundK = 0;
     this.breaches = [new BreachWorm(this.scene), new BreachWorm(this.scene)];
     this.devour = new DevourWorm(this.scene);
     this.dust = new DustField(this.scene);
@@ -162,7 +166,7 @@ export class Game {
     this.camYaw = 0;
     this.shake = 0;
     this.breachTimer = 4;
-    this.v = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), d: new THREE.Vector3() };
+    this.v = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), d: new THREE.Vector3(), e: new THREE.Vector3() };
     this.playerPos = new THREE.Vector3();
     this.dustColor = new THREE.Color();
     this.colors = {
@@ -382,6 +386,7 @@ export class Game {
     this.dust.setScale(px);
     this.dustPool.setScale(px);
     this.glowPool.setScale(px);
+    this.sandPool.setScale(px);
   }
 
   /* ---------------- run lifecycle ---------------- */
@@ -393,6 +398,8 @@ export class Game {
     this.terrain.buildAll(0, 0);
     this.devour.stop();
     this.dustPool.clear();
+    this.sandPool.clear();
+    this.moundK = 0;
     this.glowPool.clear();
     const seg = this.track.segments[0];
     this.p = {
@@ -1024,6 +1031,14 @@ export class Game {
       for (let k = 0; k < 3; k++) {
         this.dustPool.emit(base, { count: 60, spread: [4, 0.5, 4], vel: [0, 9 + k * 4, 0], velSpread: 6, life: 2.2, size: 2.6, grow: 3, color: this.colors.sand, gravity: -7, drag: 0.6, alpha: 0.4 });
       }
+      // shockwave: a ring of sand thrown out across the ground as the Maker erupts
+      for (let k = 0; k < 48; k++) {
+        const a = (k / 48) * Math.PI * 2;
+        this.sandPool.emit(this.v.d.set(base.x + Math.cos(a) * 3, base.y + 0.4, base.z + Math.sin(a) * 3), {
+          count: 2, spread: [0.6, 0.2, 0.6], vel: [Math.cos(a) * 16, 2.5, Math.sin(a) * 16], velSpread: 2,
+          life: 1.6, size: 2, grow: 5, color: this.colors.sand, gravity: -3, drag: 1.4, alpha: 0.55,
+        });
+      }
     }
     if (this.devour.active && this.devour.t > 0.5) this.runner.root.visible = false;
     if (t > 3.1) this.gameOver();
@@ -1147,14 +1162,55 @@ export class Game {
   }
 
   // Sand plumes where the chaser breaks the surface.
-  wormWake() {
-    const ch = this.chaser;
-    if (!ch.model.group.visible || ch.closeness < 0.12) return;
-    const pts = ch.model.points;
-    for (let i = 3; i < pts.length - 4; i += 5) {
+  // The chaser in the sand: the travelling mound, grains boiling off it, curtains pouring off
+  // its back where it breaks the surface, and spray thrown from the head as it ploughs.
+  wormSand(dt) {
+    const ch = this.chaser, m = ch.model;
+    const on = m.group.visible ? (this.state === 'running' && this.p.ride > 0 ? 1 : smoothstep(0.03, 0.3, ch.closeness)) : 0;
+    this.moundK = damp(this.moundK, on, on > this.moundK ? 3 : 1.5, dt);
+    if (!m.group.visible && this.moundK < 0.03) { this.mound.update(m, null, 0); return; }
+    this.mound.update(m, (x, z) => this.terrain.heightAt(x, z), this.moundK);
+    if (!m.group.visible) return;
+    const pts = m.points, R = m.radius, k = Math.max(ch.closeness, 0.35);
+    const v = this.v.d;
+    for (let i = 1; i < pts.length - 6; i += 2) {
+      if (Math.random() > 0.3 * k) continue;
       const q = pts[i];
-      if (Math.abs(q.y - SAND_BED) > 3.2 || Math.random() > 0.5 * ch.closeness) continue;
-      this.dustPool.emit(this.v.d.set(q.x, SAND_BED + 0.4, q.z), { count: 1, spread: [2, 0.2, 2], vel: [0, 3, 0], velSpread: 2, life: 1.6, size: 2.6, grow: 3, color: this.colors.sand, gravity: -1.5, drag: 1, alpha: 0.45 });
+      const r = R * (1 - Math.pow(i / m.count, 2) * 0.55);
+      const top = q.y + r, s = SAND_BED;
+      if (top > s + 0.3) {
+        // the back is out of the sand: it pours off in curtains
+        this.sandPool.emit(v.set(q.x, top - 0.2, q.z), { count: 2, spread: [r * 0.7, 0.15, r * 0.7], vel: [0, 0.6, 0], velSpread: 0.9, life: 1.2, size: 0.8, grow: 2.4, color: this.colors.sandLight, gravity: -9, drag: 0.35, alpha: 0.6 });
+      } else if (s - top < r * 1.6) {
+        // shallow beneath: grains jump from the crest of the mound
+        this.sandPool.emit(v.set(q.x, s + r * 0.45, q.z), { count: 1, spread: [r * 0.9, 0.1, r * 0.9], vel: [0, 2.8, 0], velSpread: 1.6, life: 1.1, size: 1.1, grow: 2.6, color: this.colors.sand, gravity: -7, drag: 0.6, alpha: 0.45 });
+      }
+    }
+    // bow spray: sand thrown forward and aside where the head shoulders through
+    const h = pts[0];
+    if (h.y > SAND_BED - R * 1.5 && Math.random() < 0.7 * k) {
+      const f = this.v.e.subVectors(pts[0], pts[2]).setY(0).normalize();
+      for (const side of [-1, 1]) {
+        this.sandPool.emit(v.set(h.x + f.z * side * R * 0.9, Math.max(SAND_BED + 0.3, h.y), h.z - f.x * side * R * 0.9), {
+          count: 2, spread: [0.8, 0.3, 0.8], vel: [f.x * 7 + f.z * side * 4, 5.5, f.z * 7 - f.x * side * 4], velSpread: 2.2,
+          life: 1.4, size: 1.4, grow: 3.2, color: this.colors.sand, gravity: -9, drag: 0.5, alpha: 0.55,
+        });
+      }
+    }
+  }
+
+  // sand streaming off a worm arcing through the air, falling back to the dunes
+  sandCurtains(model, ground, rate, scale) {
+    const pts = model.points, R = model.radius;
+    for (let n = 0; n < rate; n++) {
+      const i = Math.floor(Math.random() * (pts.length - 2));
+      const q = pts[i];
+      if (q.y < ground + 2) continue;
+      const r = R * (1 - Math.pow(i / model.count, 2) * 0.55);
+      this.sandPool.emit(this.v.d.set(q.x, q.y + r * 0.6, q.z), {
+        count: 2, spread: [r * 0.6, 0.3, r * 0.6], vel: [0, 0.4, 0], velSpread: 1.2 * scale,
+        life: 1.6 + scale * 0.4, size: 1.4 * scale, grow: 4 * scale, color: this.colors.sandLight, gravity: -9.5, drag: 0.25, alpha: 0.5,
+      });
     }
   }
 
@@ -1195,6 +1251,7 @@ export class Game {
     }
     for (const b of this.breaches) {
       const bursts = b.update(dt);
+      if (b.active) this.sandCurtains(b.model, b.origin.y + 4, this.quality === 'high' ? 5 : 2, 2.4);
       if (bursts) {
         for (const pt of bursts) {
           this.dustPool.emit(pt, { count: 90, spread: [10, 2, 10], vel: [0, 14, 0], velSpread: 8, life: 3.5, size: 9, grow: 8, color: this.colors.sand, gravity: -4, drag: 0.4, alpha: 0.7 });
@@ -1341,13 +1398,14 @@ export class Game {
       if (st === 'running' && p.ride > 0) this.chaser.ride(dt, pathDist + 3 * this.chaser.model.segLen, p.laneX + p.rideOff);
       else this.chaser.update(dt, pathDist, 40 - p.sign * 0.37, chaseVisible && p.sign > 4 && p.lure <= 0);
       this.updateThumpers(dt);
-      this.wormWake();
+      this.wormSand(dt);
       this.crestStreamers();
       if (chaseVisible && this.chaser.closeness > 0.25 && Math.random() < 0.7) {
         this.dustPool.emit(this.chaser.headPos, { count: 3, spread: [3, 0.5, 3], vel: [0, 5, 0], velSpread: 3, life: 1.4, size: 2.2, grow: 2.5, color: this.colors.sand, gravity: -4, alpha: 0.6 });
       }
       this.updateBreaches(dt);
       this.devour.update(dt);
+      if (this.devour.active && this.devour.t < 2) this.sandCurtains(this.devour.model, this.devour.base.y, 4, 1.3);
       for (const f of this.flock) {
         f.a += f.w * dt * f.dir;
         const c = this.playerPos;
@@ -1357,6 +1415,7 @@ export class Game {
       }
       this.dustPool.update(dt);
       this.glowPool.update(dt);
+      this.sandPool.update(dt);
       this.dustColor.copy(this.sky.horizon).lerp(this.colors.sand, 0.4);
       this.dust.update(this.time, this.camera.position, this.atmo.dust, this.atmo.wind, this.dustColor);
       this.stormWall.update(this.time, this.camera.position, this.camYaw, distToZone(pathDist, 'storm'), this.sky.horizon, this.sky.uniforms.uDay.value);
