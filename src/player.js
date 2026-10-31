@@ -286,6 +286,14 @@ export class Runner {
         target.kneeL = -0.5; target.kneeR = -0.7; target.armOut = 0.05; target.footL = 0.5; target.footR = 0.5;
         break;
       }
+      case 'ride': {
+        // braced on the worm's back, hooks held high
+        target.thighL = 0.55; target.thighR = -0.25; target.kneeL = -0.9; target.kneeR = -0.5;
+        target.shL = -2.6 + Math.sin(t * 2.4) * 0.08; target.shR = -2.3; target.elL = 0.35; target.elR = 0.5;
+        target.torso = -0.12 + Math.sin(t * 2.4) * 0.04; target.armOut = 0.25; target.twist = 0.15;
+        target.bodyY = Math.sin(t * 2.4) * 0.05 - 0.08;
+        break;
+      }
       case 'dead': {
         target.bodyRot = 1.4; target.bodyY = -0.75; target.shL = -1.6; target.shR = -1.2;
         target.thighL = 0.4; target.thighR = 0.9; target.kneeL = -0.8; target.kneeR = -0.3; target.armOut = 0.9;
@@ -317,7 +325,7 @@ export class Runner {
     this.body.position.y = r.bodyY;
 
     // cloak: pinned at the shoulders, billowing with speed
-    const flow = st.mode === 'idle' ? 0.06 : st.mode === 'slide' ? 0.2 : st.mode === 'fly' ? 0.7 : 0.38 + sp * 0.013;
+    const flow = st.mode === 'idle' ? 0.06 : st.mode === 'slide' ? 0.2 : st.mode === 'fly' || st.mode === 'ride' ? 0.75 : 0.38 + sp * 0.013;
     const pos = this.cloak.geometry.attributes.position;
     const base = this.cloakBase;
     for (let i = 0; i < pos.count; i++) {

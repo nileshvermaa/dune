@@ -4,7 +4,17 @@
 export function attachDevtools(g) {
   const bot = () => {
     const p = g.p, seg = p.seg;
-    if (p.s > seg.length - 18 && !p.pendingTurn) g.onAction(seg.turn < 0 ? 'left' : 'right');
+    // open sand: break rhythm at irregular intervals, lure the worm when it gets close
+    if (p.onSand) {
+      bot.next = bot.next ?? 0;
+      if (g.time > bot.next) {
+        const r = Math.random();
+        if (r < 0.45 && p.grounded) g.onAction('jump');
+        else g.onAction(p.lane <= 0 ? 'right' : 'left');
+        bot.next = g.time + 0.3 + Math.random() * 0.6;
+      }
+      if (p.sign > 80 && p.thumpers > 0) g.onAction('thumper');
+    }
     const look = p.speed * 0.5 + 4;
     let needJump = false, needSlide = false;
     const blocked = new Set();

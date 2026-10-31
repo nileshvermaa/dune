@@ -49,7 +49,7 @@ html, body {
 #worm-meter .bar { height: 6px; border-radius: 3px; background: rgba(0,0,0,0.45); overflow: hidden; margin-top: 6px; border: 1px solid var(--line); }
 #worm-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ffb35c, #ff4d1a); box-shadow: 0 0 10px #ff4d1a; }
 
-#powerups { position: absolute; left: 18px; top: 110px; display: flex; flex-direction: column; gap: 8px; }
+#powerups { position: absolute; left: 18px; top: 160px; display: flex; flex-direction: column; gap: 8px; }
 .pu { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; font-size: 14px; }
 .pu i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 .pu .t { width: 60px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; overflow: hidden; }
@@ -69,7 +69,7 @@ html, body {
 #zone-banner span { font-family: var(--font-title); font-size: clamp(26px, 5vw, 48px); font-weight: 700; letter-spacing: 0.12em; text-shadow: 0 3px 20px rgba(0,0,0,0.7); white-space: nowrap; }
 @keyframes zoneIn { 0% { opacity: 0; letter-spacing: 0.3em; } 15% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
 
-#toasts { position: absolute; top: 90px; right: 18px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+#toasts { position: absolute; top: 196px; right: 18px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--spice); padding: 8px 14px; font-weight: 600; letter-spacing: 0.08em; animation: toast 3s ease forwards; }
 @keyframes toast { 0% { opacity: 0; transform: translateX(20px); } 10% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -118,6 +118,38 @@ footer { position: absolute; bottom: max(10px, env(safe-area-inset-bottom)); fon
 
 @media (max-width: 600px) {
   .panel { padding: 26px 22px; }
-  #powerups { top: 96px; left: 12px; }
+  #powerups { top: 150px; left: 12px; }
   #hud { padding-left: 12px; padding-right: 12px; }
 }
+
+/* ---- The Crossing: survival HUD & narration ---- */
+.gauge { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; opacity: 0.9; }
+.gauge span { width: 78px; }
+.gauge .bar { width: min(150px, 30vw); height: 5px; border-radius: 3px; background: rgba(0,0,0,0.45); overflow: hidden; border: 1px solid var(--line); }
+#water-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #3d8bd9, #8fd3ff); box-shadow: 0 0 8px #5fb8ff; transition: width 0.2s; }
+#vision-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #6a4cff, #b49cff); box-shadow: 0 0 8px #8f7bff; }
+#water-bar.low span { color: #ff8a6a; }
+#water-bar.low .bar { animation: pulse 0.5s ease-in-out infinite alternate; border-color: #ff6a4a; }
+#worm-meter.lured #worm-fill { background: linear-gradient(90deg, #7a6a5a, #b0a090); box-shadow: none; }
+
+#inventory { position: absolute; right: 18px; top: 108px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.inv { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; font-weight: 700; letter-spacing: 0.08em; color: #ffcf8a; }
+.inv.empty { opacity: 0.35; }
+.inv b { font-size: 15px; }
+.key-hint { min-width: 20px; height: 20px; font-size: 11px; }
+#inv-hooks { color: #ffd27a; }
+#thumper-btn { display: none; pointer-events: auto; position: absolute; right: 14px; bottom: max(70px, calc(env(safe-area-inset-bottom) + 60px)); padding: 14px 16px; border-radius: 30px; border: 1px solid #ffcf8a; background: rgba(40, 20, 8, 0.75); color: #ffcf8a; font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+#thumper-btn.empty { opacity: 0.35; }
+@media (pointer: coarse) { #thumper-btn { display: block; } .key-hint { display: none; } }
+
+#narration { position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%); width: min(640px, 88vw); text-align: center; pointer-events: none; font-family: var(--font-title); font-size: clamp(15px, 2.4vw, 20px); font-style: italic; line-height: 1.4; color: #fff1d6; text-shadow: 0 2px 14px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9); animation: narr 4.6s ease forwards; }
+@keyframes narr { 0% { opacity: 0; transform: translate(-50%, 8px); } 10% { opacity: 1; transform: translate(-50%, 0); } 85% { opacity: 1; } 100% { opacity: 0; } }
+
+.rules { list-style: none; padding: 0; margin: 22px auto 0; max-width: 470px; text-align: left; display: grid; gap: 6px; font-size: 15px; opacity: 0.88; }
+.rules li { padding-left: 16px; position: relative; }
+.rules li::before { content: ''; position: absolute; left: 0; top: 0.55em; width: 6px; height: 6px; background: var(--spice); transform: rotate(45deg); }
+.rules b { color: #fff1d6; letter-spacing: 0.04em; }
+.saying { font-family: var(--font-title); font-style: italic; opacity: 0.7; font-size: 15px; margin: 14px auto 0; max-width: 460px; }
+.epitaph { margin: 0 0 6px; opacity: 0.85; font-size: 16px; }
+h1 em { letter-spacing: 0.45em; margin-right: -0.45em; }
+@media (max-width: 600px) { .rules { font-size: 13px; } #inventory { top: 100px; right: 12px; } #narration { bottom: 64px; } }

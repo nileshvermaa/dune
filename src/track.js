@@ -57,6 +57,11 @@ let medalDisc = null;
 const MEDAL_DISC = () => medalDisc || (medalDisc = new THREE.CylinderGeometry(1.7, 1.7, 0.04, 40));
 const MEDAL_RING = () => medalRing || (medalRing = new THREE.RingGeometry(1.45, 1.6, 48));
 
+function smoothstepJS(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -204,9 +209,20 @@ export class Track {
     const L = seg.length;
     const diff = clamp(seg.startDist / 7000, 0, 1);
     const events = [];
+    seg.crossings = [];
+    if (!first && seg.startDist > 320 && L > 110) {
+      const chance = { desert: 0.7, shieldwall: 0.3, ruins: 0.3, spice: 0.6, storm: 0.45 }[seg.zone.id];
+      if (rng() < chance) {
+        const len = Math.min(L - 85, 60 + rng() * 55 + diff * 40);
+        const a = 38 + rng() * Math.max(0, L - 80 - len);
+        seg.crossings.push([a, a + len]);
+      }
+    }
     let s = first ? 90 : 32;
     const endS = L - 30;
     while (s < endS) {
+      const cr = seg.crossings.find(([a, b]) => s > a - 10 && s < b + 8);
+      if (cr) { s = cr[1] + 14; continue; }
       const early = seg.startDist + s < 350;
       const type = this.pickType(seg.zone, rng, early);
       events.push(this.placeObstacle(seg, type, s, rng, diff));
@@ -324,17 +340,33 @@ export class Track {
       }
       prev = next;
     }
-    if (!first && intervals.length && rng() < 0.42) {
+    for (const [a, b] of intervals) {
+      if (b - a < 14 || rng() > 0.38) continue;
+      const s = a + (b - a) * (0.3 + rng() * 0.4);
+      const lane = Math.floor(rng() * 3) - 1;
+      for (const p of seg.pickups) {
+        if (Math.abs(p.s - s) < 2.5 && Math.abs(p.x - lane * LANE_W) < 0.5) { p.taken = true; p.mesh.visible = false; }
+      }
+      this.addPickup(seg, 'water', lane * LANE_W, 1.1, s);
+    }
+    this.addPickup(seg, 'cache', 0, 1.2, L - 2.5);
+    if (!first && intervals.length && rng() < 0.5) {
       const [a, b] = intervals[Math.floor(rng() * intervals.length)];
       const s = (a + b) / 2;
       const lane = Math.floor(rng() * 3) - 1;
       const r = rng();
-      const type = r < 0.4 ? 'shield' : r < 0.72 ? 'trance' : 'thopter';
+      const type = r < 0.28 ? 'shield' : r < 0.62 ? 'thumper' : r < 0.8 ? 'hooks' : 'thopter';
       for (const p of seg.pickups) {
         if (Math.abs(p.s - s) < 3 && Math.abs(p.x - lane * LANE_W) < 0.5) { p.taken = true; p.mesh.visible = false; }
       }
       this.addPickup(seg, type, lane * LANE_W, 1.3, s);
     }
+  }
+
+  inCrossing(seg, s, pad = 0) {
+    if (!seg.crossings) return false;
+    for (const [a, b] of seg.crossings) if (s > a + pad && s < b - pad) return true;
+    return false;
   }
 
   inGap(seg, s, pad = 0) {
@@ -426,9 +458,14 @@ export class Track {
     };
 
     let cur = first ? -60 : DECK_HALF;
-    const gaps = seg.gaps.slice().sort((x, y) => x[0] - y[0]);
-    for (const [a, b] of gaps) {
+    const breaks = [...seg.gaps.map((g) => [g[0], g[1], 'gap']), ...(seg.crossings || []).map((c) => [c[0], c[1], 'sand'])].sort((x, y) => x[0] - y[0]);
+    for (const [a, b, kind] of breaks) {
       piece(cur, a, true);
+      if (kind === 'sand') {
+        this.sandRoad(seg, a, b, blocks);
+        cur = b;
+        continue;
+      }
       const pit = addMesh(new THREE.PlaneGeometry(DECK_HALF * 2, b - a), P.mats.dark, 0, SAND_BED + 0.25, -(a + b) / 2, false);
       pit.rotation.x = -Math.PI / 2;
       for (let k = 0; k < 4; k++) {
@@ -496,6 +533,68 @@ export class Track {
     seg.disposables.push(im);
   }
 
+  // Where dunes have buried the road: a walkable sand ridge with a few slabs poking through.
+  sandRoad(seg, a, b, blocks) {
+    const rng = this.rng;
+    const s0 = a - 2, s1 = b + 2;
+    const n = Math.max(2, Math.ceil((s1 - s0) / 1.2));
+    const xs = [-11, -8.5, -6.5, -5, -3.9, -2, 0, 2, 3.9, 5, 6.5, 8.5, 11];
+    const J = xs.length;
+    const pos = new Float32Array((n + 1) * J * 3);
+    const uv = new Float32Array((n + 1) * J * 2);
+    const col = new Float32Array((n + 1) * J * 3);
+    const w = new THREE.Vector3();
+    const c = new THREE.Color();
+    const noise = this.terrain.noise;
+    for (let i = 0; i <= n; i++) {
+      const s = s0 + ((s1 - s0) * i) / n;
+      // sand heaps up over the broken ends of the stone road
+      const heap = Math.max(0, 1 - Math.abs(s - a) / 3.5) + Math.max(0, 1 - Math.abs(s - b) / 3.5);
+      for (let j = 0; j < J; j++) {
+        const x = xs[j];
+        this.localToWorld(seg, x, s, w);
+        const ax = Math.abs(x);
+        const edge = smoothstepJS(3.9, 11, ax);
+        const ripple = noise(w.x * 0.3, w.z * 0.3) * 0.05;
+        let y = 0.02 + ripple + heap * 0.22 * (1 - edge);
+        y = y + (SAND_BED - 0.1 - y) * Math.pow(edge, 1.3);
+        const k = i * J + j;
+        pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = -s;
+        uv[k * 2] = w.x / 6; uv[k * 2 + 1] = w.z / 6;
+        c.copy(DRIFT_TOP).lerp(DRIFT_EDGE, edge * 0.9);
+        col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+      }
+    }
+    const idx = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < J - 1; j++) {
+        const p = i * J + j, q = p + 1, r = p + J, t = r + 1;
+        idx.push(p, q, r, q, t, r);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    if (g.attributes.normal.getY(Math.floor(J / 2)) < 0) {
+      for (let i = 0; i < idx.length; i += 3) { const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp; }
+      g.setIndex(idx);
+      g.computeVertexNormals();
+    }
+    seg.geos.push(g);
+    const m = new THREE.Mesh(g, this.terrain.material);
+    m.receiveShadow = true;
+    m.userData.shadow = false;
+    seg.group.add(m);
+    // half-buried slabs at the margins hint at the road below
+    for (let s = a + 4; s < b - 4; s += 3 + rng() * 6) {
+      const side = rng() < 0.5 ? -1 : 1;
+      blocks.push({ x: side * (3.3 + rng() * 1.6), y: -0.18, z: -s, sx: 1.2 + rng(), sy: 0.26, sz: 1.0 + rng() * 0.8, color: TILE.weathered.clone().multiplyScalar(0.9 + rng() * 0.2), ry: rng() * 0.6, rx: (rng() - 0.5) * 0.4, rz: (rng() - 0.5) * 0.4 });
+    }
+  }
+
   // Wind-blown sand banked against a causeway wall. Start (x0, s0) in segment-local
   // coordinates, running along (ax, as) for len metres and spilling outward along (ox, os).
   driftStrip(seg, x0, s0, ax, as, ox, os, len) {
@@ -560,7 +659,7 @@ export class Track {
     const rng = this.rng;
     const L = seg.length;
     const piles = [];
-    const free = (s) => !this.inGap(seg, s, -2) && (s < L - 13 || s > L + 5);
+    const free = (s) => !this.inGap(seg, s, -2) && !this.inCrossing(seg, s, -3) && (s < L - 13 || s > L + 5);
     for (let s = first ? -55 : 6; s < L - 4; s += 2.5 + rng() * 4) {
       if (!free(s)) continue;
       if (rng() < 0.4) {
@@ -625,7 +724,7 @@ export class Track {
     const s0 = first ? -50 : 0;
 
     for (let s = first ? -36 : 12, k = 0; s < L - 8; s += 24, k++) {
-      if (this.inGap(seg, s, -1.5)) continue;
+      if (this.inGap(seg, s, -1.5) || this.inCrossing(seg, s, -3)) continue;
       const post = P.makeGlowPost();
       post.position.set((k % 2 ? 1 : -1) * 3.79, 0.82, -s);
       post.traverse((o) => { o.userData.shadow = false; });

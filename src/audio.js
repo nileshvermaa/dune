@@ -285,6 +285,12 @@ export class AudioEngine {
     n.stop(t + dur + 0.1);
   }
 
+  thump() {
+    if (!this.ok()) return;
+    this.kick(this.ctx.currentTime, 0.55);
+    this.drum(this.ctx.currentTime, 140, 0.25, 0.18);
+  }
+
   jump() { this.whoosh(300, 1400, 0.22, 0.22); }
   slide() { this.whoosh(1200, 200, 0.4, 0.28); }
   turn() { this.whoosh(500, 1800, 0.25, 0.18); }

@@ -1,24 +1,37 @@
-# Arrakis Run
+# Arrakis: The Crossing
 
-A Dune-inspired 3D endless runner for the browser. Outrun the sandworm along an ancient
-causeway, harvest spice, and survive five biomes with a full day/night cycle.
+An endless desert journey in the browser, inspired by the world of *Dune*.
 
-Built with Three.js + Vite. Everything — terrain, textures, models, music and sound — is
-generated procedurally at runtime, so the build ships as a single static bundle with no assets.
+The wells of Sietch Qanat are failing. Ishra, youngest of the water-carriers, must carry
+the seed-water for a new cache across the deep desert before the storm season seals it.
+The journey unfolds in chapters as the old stone road winds through five biomes, under a full
+day/night cycle.
 
-## Play
+Everything — terrain, models, textures, music and sound — is generated procedurally at
+runtime with Three.js, so the build ships as one small static bundle with no assets.
+
+## How to survive
+
+- **Stone is safe.** The Maker cannot follow onto rock. On the old causeway, dodge, jump and
+  slide past ruins, spice pipes and spice blows.
+- **Walk without rhythm.** Where dunes have buried the road, every steady step on open sand
+  raises *wormsign*. Break your stride — jump, slide, weave — but unevenly: a regular pattern
+  is still a rhythm, and the Maker hears it. At full wormsign, the worm takes you.
+- **Guard your water.** Your stillsuit loses water every moment (more under the sun). Crashing
+  into the stones costs water rather than ending the run outright. Drink dew along the way and
+  the water caches at every bend in the road.
+- **Thumpers** draw the worm away for a few seconds.
+- **Maker hooks** turn a worm strike into a ride: Ishra mounts the worm and rides the desert.
+- **Spice** fills your prescience; when it peaks, time slows and spice flows to you.
+- **Holtzman shields** absorb one impact — but on open sand they drive the worm to frenzy.
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Change lane / turn at corners | ← → or A D | Swipe left / right |
+| Weave between lanes | ← → or A D | Swipe left / right |
 | Jump | ↑, W or Space | Swipe up or tap |
 | Slide (fast-drop in mid-air) | ↓ or S | Swipe down |
+| Plant a thumper | E, Q or Shift | Thumper button |
 | Pause | Esc or P | Pause button |
-
-- **Corners**: the causeway turns 90°. Glowing floor arrows and an obelisk mark each corner — turn or fall.
-- **Wormsign**: clipping an obstacle side-on makes you stumble and the worm closes in. Stumble again while it's close and you're taken.
-- **Power-ups**: Holtzman shield (absorbs one hit), spice trance (slow time, spice magnet, 2× score), ornithopter (fly over everything).
-- **Biomes**: Deep Desert → Shield Wall canyon → Sietch ruins → Spice fields (harvesters, spice blows) → Coriolis storm.
 
 ## Develop
 
@@ -27,12 +40,18 @@ npm install
 npm run dev
 ```
 
-## Deploy to Vercel
+## Deployment (GitHub Actions → Vercel)
 
-It's a static Vite site, so no server or environment variables are needed. `vercel.json` sets the
-framework, output directory and long-lived caching for hashed assets.
+`.github/workflows/deploy.yml` builds every push and pull request. Pushes to `main` deploy to
+production; pull requests get a preview URL posted as a comment. Vercel's own Git
+auto-deploy is disabled in `vercel.json` so the workflow is the single deploy path.
 
-- **Git**: push the repo and import it at vercel.com/new (it detects Vite automatically), or
-- **CLI**: `npm i -g vercel`, then `vercel` (preview) and `vercel --prod`.
+One-time setup — add three repository secrets under **Settings → Secrets and variables → Actions**:
 
-Fan-made tribute. Not affiliated with any Dune rights holder.
+1. `VERCEL_TOKEN` — create one at https://vercel.com/account/tokens
+2. `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` — run `npx vercel link` in this folder once, then
+   copy `orgId` and `projectId` from the generated `.vercel/project.json`.
+
+Until the secrets exist the workflow still builds, and skips the deploy step with a warning.
+
+Fan-made tribute. Not affiliated with any Dune rights holder. All story text is original.

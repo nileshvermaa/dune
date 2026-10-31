@@ -10,6 +10,7 @@ export class Input {
       ArrowDown: 'slide', KeyS: 'slide',
       Escape: 'pause', KeyP: 'pause',
       Enter: 'confirm',
+      KeyE: 'thumper', KeyQ: 'thumper', ShiftLeft: 'thumper', ShiftRight: 'thumper',
     };
     window.addEventListener('keydown', (e) => {
       const a = keys[e.code];

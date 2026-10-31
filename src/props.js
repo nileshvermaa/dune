@@ -58,6 +58,8 @@ export function initProps() {
   mats.shieldHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.3, 0.6, 1.0), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   mats.tranceHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.55, 0.35, 1.0), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   mats.thopterHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(1.0, 0.85, 0.3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+  mats.waterGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.45, 1.3, 3.2) });
+  mats.waterHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(0.3, 0.7, 1.0), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 });
   mats.plume = new THREE.SpriteMaterial({ map: tex.glow, color: '#a07850', transparent: true, opacity: 0.35, depthWrite: false });
 
   mats.shieldPU = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.5, 1.4, 3.2), wireframe: true });
@@ -512,6 +514,27 @@ export function makePowerup(type) {
   } else if (type === 'trance') {
     core = new THREE.Mesh(cached('puTrance', () => { const o = new THREE.OctahedronGeometry(0.45, 0); o.scale(0.7, 1.4, 0.7); return o; }), mats.trancePU);
     halo = new THREE.Sprite(mats.tranceHalo);
+  } else if (type === 'water' || type === 'cache') {
+    const big = type === 'cache';
+    core = new THREE.Mesh(cached(big ? 'puCache' : 'puWater', () => big ? buildLiterjon() : buildDrop()), big ? mats.metalV : mats.waterGlow);
+    if (big) {
+      const ring = new THREE.Mesh(cached('cacheRing', () => new THREE.TorusGeometry(0.42, 0.04, 6, 28)), mats.waterGlow);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.05;
+      core.add(ring);
+    }
+    halo = new THREE.Sprite(mats.waterHalo);
+    if (!big) { halo.scale.setScalar(1.3); g.add(core, halo); g.userData.core = core; return g; }
+  } else if (type === 'thumper') {
+    const t = makeThumper();
+    t.group.scale.setScalar(0.42);
+    t.group.position.y = -0.55;
+    core = new THREE.Group();
+    core.add(t.group);
+    halo = new THREE.Sprite(mats.thopterHalo);
+  } else if (type === 'hooks') {
+    core = new THREE.Mesh(cached('puHooks', buildHooks), mats.thopterPU);
+    halo = new THREE.Sprite(mats.thopterHalo);
   } else {
     const t = makeOrnithopter(0.16, true);
     core = t.group;
@@ -522,6 +545,30 @@ export function makePowerup(type) {
   g.add(core, halo);
   g.userData.core = core;
   return g;
+}
+
+function buildDrop() {
+  const g = merge([[new THREE.SphereGeometry(0.2, 14, 10), null, null], [new THREE.ConeGeometry(0.19, 0.34, 14, 1, true), null, M(0, 0.24, 0)]]);
+  g.deleteAttribute('color');
+  return g;
+}
+
+function buildLiterjon() {
+  return merge([
+    [new THREE.CylinderGeometry(0.26, 0.28, 0.75, 16), C.brass, null],
+    [new THREE.CylinderGeometry(0.12, 0.18, 0.16, 12), C.metalDark, M(0, 0.45, 0)],
+    [new THREE.TorusGeometry(0.27, 0.03, 6, 20), C.metalDark, M(0, 0.2, 0, Math.PI / 2, 0, 0)],
+    [new THREE.TorusGeometry(0.27, 0.03, 6, 20), C.metalDark, M(0, -0.2, 0, Math.PI / 2, 0, 0)],
+  ]);
+}
+
+function buildHooks() {
+  const parts = [];
+  for (const sx of [-1, 1]) {
+    parts.push([new THREE.CylinderGeometry(0.035, 0.035, 1.1, 8), C.brass, M(sx * 0.18, 0, 0, 0, 0, sx * 0.25)]);
+    parts.push([new THREE.TorusGeometry(0.14, 0.03, 6, 14, Math.PI * 1.3), C.brass, M(sx * 0.31, 0.55, 0, 0, 0, sx > 0 ? -0.2 : Math.PI + 0.2)]);
+  }
+  return merge(parts);
 }
 
 /* ================= Vehicles ================= */

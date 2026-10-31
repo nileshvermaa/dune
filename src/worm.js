@@ -187,6 +187,33 @@ export class ChaserWorm {
   }
 }
 
+// The ridden worm: surfaced beneath the rider, ploughing alongside the road.
+// headDist is the path distance of the head; offset the lateral position.
+ChaserWorm.prototype.ride = function ride(dt, headDist, offset) {
+  this.time += dt;
+  const m = this.model;
+  m.group.visible = true;
+  const pts = m.points;
+  for (let i = 0; i <= m.count; i++) {
+    const d = headDist - i * m.segLen;
+    this.track.sample(d, offset + Math.sin(this.time * 0.9 + i * 0.22) * 0.5 * (i / m.count), pts[i]);
+    pts[i].y = -1.25 + Math.sin(this.time * 2.4 - i * 0.35) * 0.3 - Math.max(0, i - 18) * 0.4;
+  }
+  pts[0].y += 0.9;
+  this._dir.subVectors(pts[0], pts[2]).normalize();
+  this._dir.y += 0.12;
+  this._dir.normalize();
+  m.setMouth(0.4 + Math.sin(this.time * 3) * 0.12);
+  m.apply(this._dir);
+  this.headPos.copy(pts[0]);
+  this.closeness = 0.4;
+};
+
+// Height of the worm's back under the rider (segment 3).
+ChaserWorm.prototype.backHeight = function backHeight() {
+  return this.model.points[3].y + this.model.radius * 0.97;
+};
+
 // Massive worm breaching far off in the dunes for spectacle.
 export class BreachWorm {
   constructor(scene) {
