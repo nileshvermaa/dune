@@ -1,6 +1,7 @@
 // Fully synthesized cinematic score — no audio files, all original:
 // sub drones, a throat-singing style voice with overtone whistles, a wordless vocal lament,
-// war drums and distorted "braam" hits — plus desert wind, worm rumble and gameplay SFX.
+// war drums and distorted "braam" hits — plus a spatial worm, stereo sand wind, footsteps
+// by surface, room echo in canyons and ruins, and mix states (pause, prescience, low water).
 
 // D Phrygian dominant
 const HIJAZ = [293.66, 311.13, 369.99, 392.0, 440.0, 466.16, 523.25, 587.33, 622.25, 739.99];
@@ -29,7 +30,12 @@ export class AudioEngine {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
-    this.master.connect(comp).connect(ctx.destination);
+    // master tone: muffles the whole mix when paused, dreamlike in prescience
+    this.tone = ctx.createBiquadFilter();
+    this.tone.type = 'lowpass';
+    this.tone.frequency.value = 20000;
+    this.tone.Q.value = 0.5;
+    this.master.connect(this.tone).connect(comp).connect(ctx.destination);
     this.music = ctx.createGain();
     this.music.gain.value = 0.55;
     this.music.connect(this.master);
@@ -60,10 +66,181 @@ export class AudioEngine {
     }
     this.noise = nb;
 
+    // room: slapback echo + reverb send that opens up in canyons and ruins
+    this.room = ctx.createGain();
+    this.room.gain.value = 0.12;
+    const echo = ctx.createDelay(1);
+    echo.delayTime.value = 0.27;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.3;
+    const echoTone = ctx.createBiquadFilter();
+    echoTone.type = 'lowpass';
+    echoTone.frequency.value = 2400;
+    this.room.connect(echo).connect(echoTone).connect(fb).connect(echo);
+    echoTone.connect(this.master);
+    this.room.connect(this.reverb);
+    this.sfx.connect(this.room);
+
     this.startWind();
+    this.startSandHiss();
+    this.startFlutter();
     this.startDrone();
     this.startRumble();
+    this.startWormVoice();
+    this.startTension();
     this.nextTime = ctx.currentTime + 0.1;
+    this.beatT = 0;
+  }
+
+  /* ---------- space ---------- */
+
+  makePanner(ref = 10, rolloff = 1) {
+    const p = this.ctx.createPanner();
+    p.panningModel = 'HRTF';
+    p.distanceModel = 'inverse';
+    p.refDistance = ref;
+    p.maxDistance = 2000;
+    p.rolloffFactor = rolloff;
+    return p;
+  }
+
+  setNodePos(node, x, y, z) {
+    const t = this.ctx.currentTime;
+    if (node.positionX) {
+      node.positionX.setTargetAtTime(x, t, 0.03);
+      node.positionY.setTargetAtTime(y, t, 0.03);
+      node.positionZ.setTargetAtTime(z, t, 0.03);
+    } else node.setPosition(x, y, z);
+  }
+
+  // listener: { pos, fwd, up } plain x/y/z objects (the camera)
+  setListener({ pos, fwd, up }) {
+    const L = this.ctx.listener;
+    this.listenerPos = pos;
+    if (L.positionX) {
+      const t = this.ctx.currentTime;
+      L.positionX.setValueAtTime(pos.x, t); L.positionY.setValueAtTime(pos.y, t); L.positionZ.setValueAtTime(pos.z, t);
+      L.forwardX.setValueAtTime(fwd.x, t); L.forwardY.setValueAtTime(fwd.y, t); L.forwardZ.setValueAtTime(fwd.z, t);
+      L.upX.setValueAtTime(up.x, t); L.upY.setValueAtTime(up.y, t); L.upZ.setValueAtTime(up.z, t);
+    } else {
+      L.setPosition(pos.x, pos.y, pos.z);
+      L.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z);
+    }
+  }
+
+  // briefly pull the score down under a big sound
+  duck(amount = 0.6, hold = 1.4) {
+    const t = this.ctx.currentTime;
+    this.music.gain.setTargetAtTime(0.55 * (1 - amount), t, 0.05);
+    this.music.gain.setTargetAtTime(0.55, t + hold, 0.8);
+  }
+
+  /* ---------- ambience ---------- */
+
+  // stereo hiss of sand grains riding the wind, gusting independently left and right
+  startSandHiss() {
+    const ctx = this.ctx;
+    this.hissGain = ctx.createGain();
+    this.hissGain.gain.value = 0;
+    this.hissGain.connect(this.master);
+    for (const side of [-1, 1]) {
+      const n = this.noiseSrc(true);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 3200 + side * 400;
+      const g = ctx.createGain();
+      g.gain.value = 0.5;
+      const gust = ctx.createOscillator();
+      gust.frequency.value = side < 0 ? 0.17 : 0.23;
+      const gg = ctx.createGain();
+      gg.gain.value = 0.4;
+      gust.connect(gg).connect(g.gain);
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = side * 0.8;
+      n.connect(hp).connect(g).connect(pan).connect(this.hissGain);
+      n.start(0, Math.random() * 1.8);
+      gust.start();
+    }
+  }
+
+  // the cloak snapping in the slipstream; louder the faster Ishra runs
+  startFlutter() {
+    const ctx = this.ctx;
+    const n = this.noiseSrc(true);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 320;
+    bp.Q.value = 1.1;
+    const am = ctx.createGain();
+    am.gain.value = 0.5;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'triangle';
+    lfo.frequency.value = 13;
+    const lg = ctx.createGain();
+    lg.gain.value = 0.45;
+    lfo.connect(lg).connect(am.gain);
+    this.flutterLfo = lfo;
+    this.flutterGain = ctx.createGain();
+    this.flutterGain.gain.value = 0;
+    n.connect(bp).connect(am).connect(this.flutterGain).connect(this.sfx);
+    n.start(0, Math.random() * 1.8);
+    lfo.start();
+  }
+
+  // the worm in 3D: grinding sand and a hiss of grains streaming off it, at the head
+  startWormVoice() {
+    const ctx = this.ctx;
+    this.wormPan = this.makePanner(9, 1.1);
+    this.wormPan.connect(this.sfx);
+    this.wormVoice = ctx.createGain();
+    this.wormVoice.gain.value = 0;
+    this.wormVoice.connect(this.wormPan);
+    const n = this.noiseSrc(true);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 240;
+    bp.Q.value = 0.9;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.7;
+    const lg = ctx.createGain();
+    lg.gain.value = 110;
+    lfo.connect(lg).connect(bp.frequency);
+    n.connect(bp).connect(this.wormVoice);
+    const n2 = this.noiseSrc(true);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2600;
+    const hg = ctx.createGain();
+    hg.gain.value = 0.3;
+    n2.connect(hp).connect(hg).connect(this.wormVoice);
+    n.start(0, Math.random() * 1.8);
+    n2.start(0, Math.random() * 1.8);
+    lfo.start();
+  }
+
+  // dissonant glassy shimmer that rises with wormsign
+  startTension() {
+    const ctx = this.ctx;
+    this.tension = ctx.createGain();
+    this.tension.gain.value = 0;
+    this.tension.connect(this.music);
+    this.tension.connect(this.reverb);
+    const trem = ctx.createOscillator();
+    trem.frequency.value = 5.5;
+    const tg = ctx.createGain();
+    tg.gain.value = 0.35;
+    const body = ctx.createGain();
+    body.gain.value = 0.65;
+    trem.connect(tg).connect(body.gain);
+    body.connect(this.tension);
+    for (const f of [1174.7, 1244.5, 1661.2, 1760]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = f;
+      o.detune.value = (Math.random() - 0.5) * 14;
+      o.connect(body);
+      o.start();
+    }
+    trem.start();
   }
 
   setEnabled(on) {
@@ -284,6 +461,7 @@ export class AudioEngine {
     const t = ctx.currentTime;
     if (this.lastBraam && t - this.lastBraam < 2.5) return;
     this.lastBraam = t;
+    this.duck(0.45, 1.6);
     const shaper = ctx.createWaveShaper();
     const curve = new Float32Array(1024);
     for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; curve[i] = Math.tanh(x * 3.5); }
@@ -352,15 +530,154 @@ export class AudioEngine {
     }
   }
 
-  update(dt, { speed = 0, storm = 0, worm = 0, intensity = 0.15 }) {
+  // state: speed, storm, worm (closeness), intensity, plus optional listener, wormPos, room (0..1),
+  // water (0..100), sign (0..100), muffle ('paused' | 'trance' | 'dying' | null)
+  update(dt, { speed = 0, storm = 0, worm = 0, intensity = 0.15, listener = null, wormPos = null, room = 0.12, water = 100, sign = 0, muffle = null }) {
     if (!this.ctx || this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime;
     this.intensity = intensity;
     this.windGain.gain.setTargetAtTime(0.04 + speed * 0.0025 + storm * 0.35, t, 0.3);
     this.windFilter.Q.value = 0.7 + storm;
-    this.rumbleGain.gain.setTargetAtTime(worm * 0.55, t, 0.15);
+    this.hissGain.gain.setTargetAtTime(0.012 + speed * 0.0006 + storm * 0.09, t, 0.4);
+    this.flutterGain.gain.setTargetAtTime(Math.min(1, speed / 30) * 0.05, t, 0.2);
+    this.flutterLfo.frequency.setTargetAtTime(9 + speed * 0.35, t, 0.3);
+    this.rumbleGain.gain.setTargetAtTime(worm * 0.42, t, 0.15);
     this.droneFilter.Q.value = 2 + intensity * 4;
+    this.room.gain.setTargetAtTime(room, t, 0.6);
+    this.tension.gain.setTargetAtTime(Math.max(0, (sign - 45) / 55) * 0.035, t, 0.4);
+    const cut = muffle === 'paused' ? 650 : muffle === 'trance' ? 1700 : muffle === 'dying' ? 1100 : 20000;
+    this.tone.frequency.setTargetAtTime(cut, t, cut < 20000 ? 0.12 : 0.4);
+
+    if (listener) this.setListener(listener);
+    if (wormPos && worm > 0.02) {
+      this.setNodePos(this.wormPan, wormPos.x, wormPos.y, wormPos.z);
+      this.wormVoice.gain.setTargetAtTime(0.25 + worm * 0.9, t, 0.15);
+      if (worm > 0.45 && Math.random() < dt * 1.6 * worm) this.wormClack();
+    } else this.wormVoice.gain.setTargetAtTime(0, t, 0.3);
+
+    // heartbeat when the water runs low: faster as it falls
+    if (water < 28 && muffle !== 'paused') {
+      this.beatT -= dt;
+      if (this.beatT <= 0) {
+        const k = 1 - water / 28;
+        this.heartbeat(0.22 + k * 0.25);
+        this.beatT = 0.95 - k * 0.38;
+      }
+    }
     this.schedule();
+  }
+
+  // ---------- footsteps & worm voice ----------
+
+  // one footfall: a firm gritty tap on stone, a soft crunch on sand. pan: -1 left foot, 1 right
+  footstep(surface = 'stone', speed = 20, pan = 0) {
+    if (!this.ok()) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const sp = ctx.createStereoPanner();
+    sp.pan.value = pan * 0.22;
+    sp.connect(this.sfx);
+    const vol = (0.09 + Math.min(1, speed / 30) * 0.05) * (0.85 + Math.random() * 0.3);
+    const noise = (type, freq, q, a, peak, dec) => {
+      const n = this.noiseSrc();
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      this.env(g, t, a, peak, dec);
+      n.connect(f).connect(g).connect(sp);
+      n.start(t, Math.random() * 1.6);
+      n.stop(t + a + dec + 0.05);
+    };
+    if (surface === 'sand') {
+      noise('bandpass', 650 + Math.random() * 300, 0.8, 0.008, vol * 1.5, 0.13);
+      noise('highpass', 5200, 0.7, 0.004, vol * 0.45, 0.07);
+    } else {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.setValueAtTime(150 + Math.random() * 30, t);
+      o.frequency.exponentialRampToValueAtTime(70, t + 0.06);
+      this.env(g, t, 0.002, vol * 1.3, 0.07);
+      o.connect(g).connect(sp);
+      o.start(t);
+      o.stop(t + 0.1);
+      noise('bandpass', 2300 + Math.random() * 600, 1.4, 0.001, vol, 0.035);
+    }
+  }
+
+  // a wet clack of the mouth plates, from wherever the worm is
+  wormClack() {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const n = this.noiseSrc();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 900 + Math.random() * 600;
+    f.Q.value = 3;
+    const g = ctx.createGain();
+    this.env(g, t, 0.002, 0.5, 0.07);
+    n.connect(f).connect(g).connect(this.wormPan);
+    n.start(t, Math.random() * 1.6);
+    n.stop(t + 0.12);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(110 + Math.random() * 40, t);
+    o.frequency.exponentialRampToValueAtTime(48, t + 0.35);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 420;
+    const og = ctx.createGain();
+    this.env(og, t, 0.02, 0.3, 0.35);
+    o.connect(lp).connect(og).connect(this.wormPan);
+    o.start(t);
+    o.stop(t + 0.45);
+  }
+
+  // a distant breach, heard from where it happens and arriving at the speed of sound
+  breach(pos) {
+    if (!this.ok()) return;
+    const ctx = this.ctx;
+    const lp = this.listenerPos;
+    const dist = lp ? Math.hypot(pos.x - lp.x, pos.y - lp.y, pos.z - lp.z) : 200;
+    const t = ctx.currentTime + Math.min(1.2, dist / 343);
+    const pan = this.makePanner(40, 0.8);
+    this.setNodePos(pan, pos.x, pos.y, pos.z);
+    pan.connect(this.sfx);
+    pan.connect(this.reverb);
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(46, t);
+    o.frequency.exponentialRampToValueAtTime(24, t + 3);
+    const n = this.noiseSrc();
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(700, t);
+    f.frequency.exponentialRampToValueAtTime(120, t + 3.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1.1, t + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 4);
+    o.connect(f);
+    n.connect(f);
+    f.connect(g).connect(pan);
+    o.start(t); o.stop(t + 4.1);
+    n.start(t, Math.random()); n.stop(t + 4.1);
+  }
+
+  heartbeat(vol = 0.3) {
+    if (!this.ok()) return;
+    const t = this.ctx.currentTime;
+    for (const [dt, v] of [[0, vol], [0.17, vol * 0.7]]) {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.frequency.setValueAtTime(62, t + dt);
+      o.frequency.exponentialRampToValueAtTime(38, t + dt + 0.14);
+      this.env(g, t + dt, 0.006, v, 0.16);
+      o.connect(g).connect(this.sfx);
+      o.start(t + dt);
+      o.stop(t + dt + 0.25);
+    }
   }
 
   // ---------- SFX ----------
@@ -425,7 +742,10 @@ export class AudioEngine {
     o.stop(t + 0.5);
   }
 
-  land() { this.thud(90, 0.25); }
+  land(surface = 'stone') {
+    this.thud(surface === 'sand' ? 70 : 95, surface === 'sand' ? 0.2 : 0.28);
+    this.footstep(surface, 25, 0);
+  }
   stumble() { this.thud(60, 0.7); this.whoosh(800, 200, 0.3, 0.35); }
 
   crash() {
@@ -473,6 +793,7 @@ export class AudioEngine {
     if (!this.ok()) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
+    this.duck(0.6, 1.8);
     const o = ctx.createOscillator();
     o.type = 'sawtooth';
     o.frequency.setValueAtTime(55, t);

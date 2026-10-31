@@ -583,6 +583,7 @@ export class Runner {
     else this.animateProcedural(dt, mode, sp, st.vy || 0, t, lateral);
 
     root.updateMatrixWorld(true);
+    this.detectSteps(mode);
     this.simulateCloth(dt, velL, accL, dYaw, jumped);
 
     const su = this.shield.material.uniforms;
@@ -761,6 +762,23 @@ export class Runner {
     const parentQ = bone.parent.getWorldQuaternion(new THREE.Quaternion());
     bone.quaternion.slerp(parentQ.invert().multiply(world), w);
     bone.updateWorldMatrix(false, true);
+  }
+
+  // Footfalls from the animated feet: a step fires as an ankle drops to the ground, re-arming once
+  // it lifts again. onStep(side) is set by the game (-1 left, 1 right).
+  detectSteps(mode) {
+    if (!this.onStep) return;
+    const feet = this.rig ? this.legBones.map((l) => l[2]) : this.legs.map((l) => l.foot);
+    const inv = this._inv.copy(this.root.matrixWorld).invert();
+    this.stepArmed = this.stepArmed || [true, true];
+    for (let i = 0; i < 2; i++) {
+      const y = this._w.setFromMatrixPosition(feet[i].matrixWorld).applyMatrix4(inv).y;
+      if (y > 0.24) this.stepArmed[i] = true;
+      else if (y < 0.16 && this.stepArmed[i]) {
+        this.stepArmed[i] = false;
+        if (mode === 'run' || mode === 'stumble') this.onStep(i === 0 ? -1 : 1);
+      }
+    }
   }
 
   /* ---------------- cloth ---------------- */

@@ -22,6 +22,8 @@ import { loadPhotoTextures, updatePhotoTextures } from './materials.js';
 import { loadRunnerRig } from './rig.js';
 
 const ZONE_LABELS = ['Erg', 'Wall', 'Sietch', 'Spice', 'Storm'];
+// how much the land throws sound back: canyon walls and ruins echo, open sand swallows it
+const ROOM = { desert: 0.12, shieldwall: 0.65, ruins: 0.55, spice: 0.2, storm: 0.06 };
 
 const GRAVITY = 40;
 const JUMP_V = 13.2;
@@ -128,6 +130,8 @@ export class Game {
     this.sky = new Sky(this.scene);
     this.runner = new Runner();
     this.scene.add(this.runner.root);
+    // footfalls come from the animated feet; sand crunches, stone taps
+    this.runner.onStep = (side) => this.audio.footstep(this.p.onSand ? 'sand' : 'stone', this.p.speed, side);
     // clip-driven skinned body; the procedural runner stays if it cannot load
     loadRunnerRig().then((gltf) => this.runner.attachRig(gltf)).catch((err) => console.warn('Runner rig unavailable, using procedural body', err));
     this.blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex.glow, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
@@ -735,7 +739,7 @@ export class Game {
       const support = !this.track.inGap(seg, p.s, 0.3);
       if (p.y <= 0 && support && p.y > -0.7) {
         if (!p.grounded && p.vy < -5) {
-          this.audio.land();
+          this.audio.land(this.p.onSand ? 'sand' : 'stone');
           this.puff(10, 0.6);
         }
         p.y = 0;
@@ -1246,6 +1250,7 @@ export class Game {
         origin.addScaledVector(across, -50);
         origin.y = this.terrain.heightAt(origin.x, origin.z) - 4;
         b.start(origin, across, 32 + Math.random() * 18, 7 + Math.random() * 2);
+        this.audio.breach(origin);
       }
       this.breachTimer = 16 + Math.random() * 20;
     }
@@ -1424,11 +1429,21 @@ export class Game {
     }
 
     const running = st === 'running';
+    const cam = this.camera;
+    const lf = (this._lf || (this._lf = { fwd: new THREE.Vector3(), up: new THREE.Vector3() }));
+    cam.getWorldDirection(lf.fwd);
+    lf.up.set(0, 1, 0).applyQuaternion(cam.quaternion);
     this.audio.update(dt, {
       speed: running ? p.speed : 0,
       storm: this.atmo.haze,
       worm: running ? this.chaser.closeness : st === 'dying' ? 0.6 : 0,
       intensity: running ? 0.3 + clamp((p.speed - 15) / 19, 0, 1) * 0.6 : 0.12,
+      listener: { pos: cam.position, fwd: lf.fwd, up: lf.up },
+      wormPos: (running || st === 'paused') && this.chaser.model.group.visible ? this.chaser.headPos : null,
+      room: ROOM[p.seg.zone.id] ?? 0.12,
+      water: running ? p.water : 100,
+      sign: running ? p.sign : 0,
+      muffle: st === 'paused' ? 'paused' : st === 'dying' || st === 'over' ? 'dying' : running && p.trance > 0 ? 'trance' : null,
     });
 
     if (this.grade) {
