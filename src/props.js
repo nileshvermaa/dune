@@ -39,6 +39,7 @@ export function initProps() {
   mats.tile = detailed(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8 }), { scale: 0.3, strength: 0.16, bump: 0.3 });
   mats.wall = detailed(new THREE.MeshStandardMaterial({ map: tex.stone.map, normalMap: tex.stone.normalMap, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.9, color: '#e8cfae' }), { scale: 0.3, strength: 0.12, bump: 0.2 });
   mats.mortar = new THREE.MeshStandardMaterial({ color: '#7a5a3a', roughness: 1 });
+  mats.sandPile = detailed(new THREE.MeshStandardMaterial({ color: '#c9935f', roughness: 1, metalness: 0 }), { scale: 0.9, strength: 0.25, bump: 0.6, sparkle: 1.0 });
   mats.boneV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.02 }), { scale: 1.0, strength: 0.12, bump: 0.2 });
   mats.metalV = detailed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.7 }), { scale: 0.8, strength: 0.15, bump: 0.12 });
   mats.glass = new THREE.MeshPhysicalMaterial({ color: '#16222e', roughness: 0.05, metalness: 0.2, clearcoat: 1, emissive: '#0b2233', emissiveIntensity: 0.5 });
@@ -70,6 +71,7 @@ export function initProps() {
   cache.set('box', new THREE.BoxGeometry(1, 1, 1));
   cache.set('globe', new THREE.SphereGeometry(0.2, 16, 12));
   cache.set('block', rbox(1, 1, 1, 0.07, 1));
+  cache.set('sandPile', new THREE.SphereGeometry(1, 18, 6, 0, Math.PI * 2, 0, Math.PI / 2));
 }
 
 const lerpC = (a, b, t) => a.clone().lerp(b, t);
@@ -764,4 +766,161 @@ export function makeWreck(rnd) {
   t.group.rotation.set(0.25, rnd() * Math.PI * 2, 0.5);
   t.update(rnd() * 10);
   return t.group;
+}
+
+/* ================= Desert landmarks ================= */
+
+function buildWormSkeleton() {
+  const rnd = mulberry32(21);
+  const parts = [];
+  const pts = [];
+  for (let i = 0; i <= 12; i++) {
+    const x = i * 11;
+    pts.push(new THREE.Vector3(x, -1.5 + Math.sin(i * 0.7) * 1.2, Math.sin(i * 0.5) * 9));
+  }
+  const spine = new THREE.CatmullRomCurve3(pts);
+  const up = new THREE.Vector3(0, 1, 0);
+  const q = new THREE.Quaternion();
+  const tan = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  const nV = 44;
+  for (let i = 0; i < nV; i++) {
+    const t = i / (nV - 1);
+    const p = spine.getPoint(t);
+    spine.getTangent(t, tan);
+    q.setFromUnitVectors(up, tan);
+    const r = 2.4 * (1 - t * 0.55);
+    const m = new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1));
+    parts.push([new THREE.CylinderGeometry(r, r * 0.9, 1.8, 10), C.bone, m]);
+    parts.push([new THREE.CylinderGeometry(r * 1.25, r * 1.25, 0.35, 10), lerpC(C.bone, C.boneDark, 0.35), m.clone().multiply(M(0, 0.95, 0))]);
+    parts.push([new THREE.ConeGeometry(r * 0.35, r * 1.6, 6), C.bone, new THREE.Matrix4().makeTranslation(p.x, p.y + r * 1.2, p.z)]);
+  }
+  for (let i = 0; i < 20; i++) {
+    const t = 0.06 + (i / 19) * 0.86;
+    const p = spine.getPoint(t);
+    spine.getTangent(t, tan);
+    side.crossVectors(tan, up).normalize();
+    const size = 20 * (1 - t * 0.55);
+    const broken = rnd() < 0.3 ? 0.55 + rnd() * 0.3 : 1;
+    for (const sgn of [-1, 1]) {
+      const ribPts = [];
+      for (let k = 0; k <= 6; k++) {
+        const a = (k / 6) * Math.PI * 0.85 * broken;
+        const out = Math.sin(a) * size * 0.75 + 1.8;
+        const y = (1 - Math.cos(a)) * size * 0.62;
+        ribPts.push(new THREE.Vector3(p.x + side.x * sgn * out, p.y + y * 0.9 + Math.sin(a) * size * 0.3, p.z + side.z * sgn * out));
+      }
+      parts.push([new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ribPts), 18, 0.55 * (1 - t * 0.4), 6, false), C.bone, null]);
+    }
+  }
+  const head = spine.getPoint(0);
+  parts.push([new THREE.TorusGeometry(10, 2.4, 10, 36), C.bone, M(head.x - 4, head.y + 6, head.z, 0, Math.PI / 2, 0)]);
+  const dir = new THREE.Vector3();
+  for (let k = 0; k < 36; k++) {
+    const a = (k / 36) * Math.PI * 2;
+    dir.set(-0.35, -Math.sin(a), -Math.cos(a)).normalize();
+    q.setFromUnitVectors(up, dir);
+    const m = new THREE.Matrix4().compose(new THREE.Vector3(head.x - 4.5, head.y + 6 + Math.sin(a) * 8.6, head.z + Math.cos(a) * 8.6), q, new THREE.Vector3(1, 1, 1));
+    parts.push([new THREE.ConeGeometry(0.45, 3.2, 5), C.cream, m]);
+  }
+  return shade(merge(parts), (x, y) => (y < 0.5 ? 0.62 : 1) * (0.85 + 0.15 * smoothstep(0, 18, y)));
+}
+
+export function makeWormSkeleton() {
+  const m = new THREE.Mesh(cached('wormSkeleton', buildWormSkeleton), mats.boneV);
+  return m;
+}
+
+function buildStoneCircle() {
+  const rnd = mulberry32(31);
+  const parts = [];
+  const R = 22;
+  const n = 11;
+  const tops = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const x = Math.cos(a) * R, z = Math.sin(a) * R;
+    if (rnd() < 0.2) {
+      const fallen = chipped(rbox(3, 15, 1.8, 0.3, 2), 0.25, 0.25, 400 + i);
+      parts.push([fallen, blockColor(rnd, C.mid), M(x * 1.15, 0.6, z * 1.15, Math.PI / 2, -a, 0.2)]);
+      tops.push(null);
+      continue;
+    }
+    const h = 13 + rnd() * 8;
+    const slab = chipped(rbox(3.2, h, 1.9, 0.3, 2), 0.28, 0.22, 500 + i);
+    parts.push([slab, blockColor(rnd), M(x, h / 2 - 1.5, z, (rnd() - 0.5) * 0.08, -a + Math.PI / 2, (rnd() - 0.5) * 0.08)]);
+    tops.push([x, h - 1.5, z, a]);
+  }
+  for (let i = 0; i < n; i += 2) {
+    const A = tops[i], B = tops[(i + 1) % n];
+    if (!A || !B) continue;
+    const mx = (A[0] + B[0]) / 2, mz = (A[2] + B[2]) / 2;
+    const len = Math.hypot(A[0] - B[0], A[2] - B[2]) + 3;
+    const y = Math.min(A[1], B[1]) + 0.9;
+    parts.push([chipped(rbox(len, 1.8, 2.2, 0.25, 2), 0.18, 0.3, 600 + i), blockColor(rnd, C.light), M(mx, y, mz, 0, -Math.atan2(B[2] - A[2], B[0] - A[0]), 0)]);
+  }
+  parts.push([chipped(rbox(6, 1.6, 4, 0.3, 2), 0.15, 0.4, 700), blockColor(rnd, C.mid), M(0, 0.3, 0)]);
+  return grime(merge(parts), -1.5, 4, 0.4);
+}
+
+export function makeStoneCircle() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(cached('stoneCircle', buildStoneCircle), mats.stoneV));
+  const orb = new THREE.Mesh(geo('globe'), mats.spiceGlow);
+  orb.position.y = 2.6;
+  orb.scale.setScalar(4);
+  g.add(orb);
+  const halo = new THREE.Sprite(mats.spiceHalo);
+  halo.position.y = 2.6;
+  halo.scale.setScalar(14);
+  g.add(halo);
+  return g;
+}
+
+function white(g) {
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+  return g;
+}
+
+function buildSietch() {
+  const rnd = mulberry32(41);
+  const parts = [];
+  parts.push([rockGeometry('mesa', 2), null, M(0, -4, -16, 0, 0, 0, 36, 50, 22)]);
+  parts.push([rockGeometry('mesa', 1), null, M(-40, -4, 0, 0, 1.1, 0, 20, 46, 18)]);
+  parts.push([rockGeometry('mesa', 3), null, M(40, -4, -2, 0, 2.3, 0, 20, 42, 18)]);
+  const face = shade(white(chipped(rbox(62, 40, 10, 2, 3), 1.6, 0.05, 800)), (x, y) => 0.82 + 0.18 * Math.sin(y * 0.9) + (y > 17 ? 0.06 : 0));
+  parts.push([face, C.mid, M(0, 15, 5)]);
+  for (let row = 0; row < 4; row++) {
+    const y = 3 + row * 8.5;
+    parts.push([rbox(58 - row * 6, 0.8, 3.2, 0.2), blockColor(rnd, C.light), M(0, y - 1.6, 11)]);
+    for (let k = 0; k < 7 - row; k++) {
+      const x = (k - (6 - row) / 2) * 7.5;
+      parts.push([rbox(3.2, 4.6, 1.2, 0.3), C.black, M(x, y + 1.2, 10.05)]);
+      parts.push([rbox(4.2, 0.6, 1.6, 0.15), blockColor(rnd, C.cream), M(x, y + 3.8, 10.3)]);
+    }
+  }
+  for (let k = 0; k < 9; k++) {
+    parts.push([rbox(4, 1.1, 3, 0.15), blockColor(rnd, C.light), M(-27 + k * 1.2, 0.6 + k * 1.05, 12 - k * 0.1, 0, 0, 0)]);
+  }
+  return grime(merge(parts), -4, 6, 0.35);
+}
+
+function buildSietchLights() {
+  const parts = [];
+  for (let row = 0; row < 4; row++) {
+    const y = 3 + row * 8.5;
+    for (let k = 0; k < 7 - row; k++) {
+      const x = (k - (6 - row) / 2) * 7.5;
+      if ((row * 7 + k) % 3 === 1) continue;
+      parts.push([rbox(1.6, 2.4, 0.3, 0.1), C.white, M(x, y + 0.9, 10.4)]);
+    }
+  }
+  return merge(parts);
+}
+
+export function makeSietch() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(cached('sietch', buildSietch), mats.rock));
+  g.add(new THREE.Mesh(cached('sietchLights', buildSietchLights), mats.globe));
+  return g;
 }

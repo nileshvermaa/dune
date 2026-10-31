@@ -3,12 +3,13 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 import { clamp, damp, angleDamp, smoothstep, lerp } from './noise.js';
-import { initProps, mats, makeOrnithopter } from './props.js';
+import { initProps, mats, tex, makeOrnithopter } from './props.js';
 import { Terrain, SAND_BED } from './terrain.js';
 import { Track, LANE_W, DECK_HALF, YAWS, speedAt } from './track.js';
-import { Sky } from './sky.js';
+import { Sky, installHeightFog } from './sky.js';
 import { Runner } from './player.js';
 import { ChaserWorm, BreachWorm, DevourWorm } from './worm.js';
 import { DustField, ParticlePool } from './effects.js';
@@ -40,9 +41,28 @@ const MILESTONES = [
 
 const $ = (id) => document.getElementById(id);
 
+// Final display-space grade: gentle S-curve, warm highlights / cool shadows, film grain.
+const GRADE = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uWarm: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uWarm; varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      c = mix(c, c * c * (3.0 - 2.0 * c), 0.3);
+      float l = dot(c, vec3(0.299, 0.587, 0.114));
+      c = mix(vec3(l), c, 1.1);
+      c += uWarm * (vec3(0.025, 0.008, -0.02) * smoothstep(0.45, 1.0, l) + vec3(-0.008, 0.0, 0.018) * (1.0 - smoothstep(0.0, 0.35, l)));
+      float n = fract(sin(dot(vUv * 1000.0 + fract(uTime) * 91.0, vec2(12.9898, 78.233))) * 43758.5453);
+      c += (n - 0.5) * 0.022;
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    }`,
+};
+
 export class Game {
   constructor(app) {
     this.app = app;
+    installHeightFog();
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -59,6 +79,10 @@ export class Game {
     this.sky = new Sky(this.scene);
     this.runner = new Runner();
     this.scene.add(this.runner.root);
+    this.blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex.glow, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
+    this.blob.rotation.x = -Math.PI / 2;
+    this.blob.renderOrder = 3;
+    this.scene.add(this.blob);
     this.chaser = new ChaserWorm(this.scene, this.track);
     this.breaches = [new BreachWorm(this.scene), new BreachWorm(this.scene)];
     this.devour = new DevourWorm(this.scene);
@@ -110,6 +134,7 @@ export class Game {
     this.last = performance.now();
     requestAnimationFrame((t) => this.loop(t));
     setTimeout(() => $('loading').classList.add('done'), 150);
+    setTimeout(() => { $('loading').style.display = 'none'; }, 900);
   }
 
   /* ---------------- persistence & UI ---------------- */
@@ -211,6 +236,8 @@ export class Game {
       this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.9);
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
+      this.grade = new ShaderPass(GRADE);
+      this.composer.addPass(this.grade);
     }
     if (changed) {
       this.scene.traverse((o) => {
@@ -695,6 +722,18 @@ export class Game {
     else if (this.state === 'paused') mode = 'none';
     if (mode !== 'none') this.runner.update(dt, { speed: p.speed, mode, vy: p.vy });
 
+    const b = this.blob;
+    const overGap = this.track.inGap(seg, p.s, 0.2) || p.s > seg.length + DECK_HALF;
+    b.visible = this.runner.root.visible && !overGap && p.y > -0.5;
+    if (b.visible) {
+      const lift = Math.max(0, p.y);
+      b.position.set(this.playerPos.x, 0.02, this.playerPos.z);
+      const k = (p.slideT > 0 ? 1.6 : 1.1) / (1 + lift * 0.35);
+      b.scale.set(k, (p.slideT > 0 ? 2.2 : 1.3) / (1 + lift * 0.35), 1);
+      b.rotation.z = p.visualYaw;
+      b.material.opacity = 0.55 / (1 + lift * 0.6);
+    }
+
     const th = this.thopter;
     const flying = this.state === 'running' && p.fly > 0;
     if (flying || th.group.visible) {
@@ -888,6 +927,10 @@ export class Game {
       intensity: running ? 0.3 + clamp((p.speed - 15) / 19, 0, 1) * 0.6 : 0.12,
     });
 
+    if (this.grade) {
+      this.grade.uniforms.uTime.value = this.time;
+      this.grade.uniforms.uWarm.value = this.p.trance > 0 && this.state === 'running' ? -1 : 1;
+    }
     if (this.composer && this.quality === 'high') this.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }

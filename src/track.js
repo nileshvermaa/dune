@@ -49,6 +49,9 @@ const TILE = {
   buttress: new THREE.Color('#a9805a'),
 };
 
+const DRIFT_TOP = new THREE.Color('#dcae78');
+const DRIFT_EDGE = new THREE.Color('#ad7c4f');
+
 let medalRing = null;
 let medalDisc = null;
 const MEDAL_DISC = () => medalDisc || (medalDisc = new THREE.CylinderGeometry(1.7, 1.7, 0.04, 40));
@@ -173,6 +176,7 @@ export class Track {
 
     this.populate(seg, first);
     this.buildDeck(seg, first);
+    this.dressSand(seg, first);
     this.decorate(seg, first);
     seg.group.traverse((o) => {
       if (o.isMesh && o.userData.shadow !== false) o.castShadow = true;
@@ -414,6 +418,8 @@ export class Track {
       if (len <= 0.05) return;
       addMesh(deckGeometry(DECK_HALF * 2, DECK_DEPTH, len), coreMats, 0, -0.1 - DECK_DEPTH / 2, -(a + b) / 2);
       pave(a, b, -3.58, 3.58, raggedEnd);
+      this.driftStrip(seg, -4.0, a, 0, 1, -1, 0, len);
+      this.driftStrip(seg, 4.0, a, 0, 1, 1, 0, len);
       parapet(-1, a, b);
       parapet(1, a, b);
       walls(a, b);
@@ -447,6 +453,8 @@ export class Track {
       add(x, 0.96, -s, 0.84, 0.14, 0.84, TILE.cap.clone());
     }
     for (const side of [-1, 1]) add(side * 4.05, -0.28, -L, 0.3, 0.24, 8, TILE.cornice.clone());
+    this.driftStrip(seg, -4.4, L + 4.0, 1, 0, 0, 1, 8.8);
+    this.driftStrip(seg, cs * 4.0, L - 4.0, 0, 1, cs, 0, 8.4);
     add(0, -0.28, -(L + 4.05), 8.6, 0.24, 0.3, TILE.cornice.clone());
     const medalGeo = MEDAL_DISC();
     const medal = new THREE.Mesh(medalGeo, P.mats.tile);
@@ -486,6 +494,118 @@ export class Track {
     im.userData.shadow = false;
     g.add(im);
     seg.disposables.push(im);
+  }
+
+  // Wind-blown sand banked against a causeway wall. Start (x0, s0) in segment-local
+  // coordinates, running along (ax, as) for len metres and spilling outward along (ox, os).
+  driftStrip(seg, x0, s0, ax, as, ox, os, len) {
+    const n = Math.max(2, Math.ceil(len / 1.4));
+    const J = 7;
+    const pos = new Float32Array((n + 1) * J * 3);
+    const uv = new Float32Array((n + 1) * J * 2);
+    const col = new Float32Array((n + 1) * J * 3);
+    const w = new THREE.Vector3();
+    const noise = this.terrain.noise;
+    const c = new THREE.Color();
+    for (let i = 0; i <= n; i++) {
+      const t = (i / n) * len;
+      const bx = x0 + ax * t, bs = s0 + as * t;
+      this.localToWorld(seg, bx, bs, w);
+      const n1 = noise(w.x * 0.045, w.z * 0.045) * 0.5 + 0.5;
+      const n2 = noise(w.x * 0.11 + 7, w.z * 0.11 - 3) * 0.5 + 0.5;
+      const width = 3.5 + n1 * 4.5;
+      const top = Math.min(-0.5, SAND_BED + 0.5 + n1 * 1.3 + n2 * 0.6);
+      for (let j = 0; j < J; j++) {
+        const u = j / (J - 1);
+        const d = -0.15 + u * width;
+        const x = bx + ox * d, s = bs + os * d;
+        const y = SAND_BED - 0.08 + (top - SAND_BED) * Math.pow(1 - u, 1.7) + Math.sin(d * 2.1 + t * 0.7) * 0.04 * (1 - u);
+        const k = (i * J + j);
+        pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = -s;
+        this.localToWorld(seg, x, s, w);
+        uv[k * 2] = w.x / 6; uv[k * 2 + 1] = w.z / 6;
+        c.copy(DRIFT_TOP).lerp(DRIFT_EDGE, Math.pow(u, 0.8));
+        col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+      }
+    }
+    const idx = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < J - 1; j++) {
+        const a = i * J + j, b = a + 1, cc = a + J, d = cc + 1;
+        idx.push(a, cc, b, b, cc, d);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    // flip winding where the strip runs "backwards" so faces point up
+    const nrm = g.attributes.normal;
+    if (nrm.getY(0) < 0) {
+      for (let i = 0; i < idx.length; i += 3) { const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp; }
+      g.setIndex(idx);
+      g.computeVertexNormals();
+    }
+    seg.geos.push(g);
+    const m = new THREE.Mesh(g, this.terrain.material);
+    m.receiveShadow = true;
+    m.userData.shadow = false;
+    seg.group.add(m);
+  }
+
+  // Sand banked against the parapets, pebbles on the sand bed.
+  dressSand(seg, first) {
+    const rng = this.rng;
+    const L = seg.length;
+    const piles = [];
+    const free = (s) => !this.inGap(seg, s, -2) && (s < L - 13 || s > L + 5);
+    for (let s = first ? -55 : 6; s < L - 4; s += 2.5 + rng() * 4) {
+      if (!free(s)) continue;
+      if (rng() < 0.4) {
+        const side = rng() < 0.5 ? -1 : 1;
+        const wdt = 0.45 + rng() * 0.6;
+        piles.push([side * (3.62 - wdt * 0.2), -0.04, -s, wdt, 0.07 + rng() * 0.07, 1.2 + rng() * 2.2, (rng() - 0.5) * 0.2]);
+      }
+    }
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
+    if (piles.length) {
+      const im = new THREE.InstancedMesh(P.geo('sandPile'), P.mats.sandPile, piles.length);
+      piles.forEach(([x, y, z, sx, sy, sz, ry], i) => {
+        q.setFromEuler(e.set(0, ry, 0));
+        im.setMatrixAt(i, m4.compose(p.set(x, y, z), q, sc.set(sx, sy, sz)));
+      });
+      im.instanceMatrix.needsUpdate = true;
+      im.computeBoundingSphere();
+      im.receiveShadow = true;
+      im.userData.shadow = false;
+      seg.group.add(im);
+      seg.disposables.push(im);
+    }
+    const peb = [];
+    const w = new THREE.Vector3();
+    for (let s = first ? -55 : 0; s < L; s += 3 + rng() * 5) {
+      const side = rng() < 0.5 ? -1 : 1;
+      const x = side * (11 + rng() * 10);
+      this.localToWorld(seg, x, s, w);
+      const k = 0.18 + rng() * rng() * 0.9;
+      peb.push([x, this.terrain.heightAt(w.x, w.z) + k * 0.15, -s, k * (0.8 + rng() * 0.5), k * (0.5 + rng() * 0.4), k * (0.8 + rng() * 0.5), rng() * 6.28]);
+    }
+    if (peb.length) {
+      const im = new THREE.InstancedMesh(P.rockGeometry('boulder', 1), P.mats.rock, peb.length);
+      peb.forEach(([x, y, z, sx, sy, sz, ry], i) => {
+        q.setFromEuler(e.set(0, ry, 0));
+        im.setMatrixAt(i, m4.compose(p.set(x, y, z), q, sc.set(sx, sy, sz)));
+      });
+      im.instanceMatrix.needsUpdate = true;
+      im.computeBoundingSphere();
+      im.castShadow = true;
+      im.receiveShadow = true;
+      im.userData.shadow = false;
+      seg.group.add(im);
+      seg.disposables.push(im);
+    }
   }
 
   propAt(seg, obj, x, s, yOffset = 0, onBed = false) {

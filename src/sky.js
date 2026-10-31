@@ -22,9 +22,31 @@ uniform float uStars;
 uniform float uTime;
 uniform float uHaze;
 uniform float uSunVis;
+uniform float uDay;
+uniform float uCloud;
 varying vec3 vDir;
 
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float vhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(vhash(i), vhash(i + vec2(1.0, 0.0)), f.x), mix(vhash(i + vec2(0.0, 1.0)), vhash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm2(vec2 p) {
+  float a = 0.0, w = 0.5;
+  for (int i = 0; i < 5; i++) { a += w * vnoise(p); p = p * 2.03 + vec2(17.1, 9.3); w *= 0.5; }
+  return a;
+}
+// integer frequencies so the silhouette wraps seamlessly around the horizon
+float ridgeH(float a, float s) {
+  float h = 0.5 * sin(a * 3.0 + s);
+  h += 0.28 * sin(a * 7.0 + s * 2.1 + sin(a * 2.0) * 0.8);
+  h += 0.14 * abs(sin(a * 17.0 + s * 3.7));
+  h += 0.07 * abs(sin(a * 41.0 + s * 1.3));
+  h += 0.035 * abs(sin(a * 97.0 + s * 5.1));
+  return h * 0.5 + 0.5;
+}
 
 vec3 moon(vec3 d, vec3 md, float size, vec3 tint, vec3 col) {
   float c = dot(d, md);
@@ -51,11 +73,71 @@ void main() {
     col = moon(d, uMoon1, 0.99935, vec3(1.15, 1.1, 1.0), col);
     col = moon(d, uMoon2, 0.99975, vec3(0.9, 1.0, 1.15), col);
   }
+
+  // wind-streaked cirrus
+  if (h > 0.0 && uCloud > 0.01) {
+    vec2 uv = d.xz / (h + 0.12) * 1.2 + vec2(uTime * 0.006, uTime * 0.0025);
+    vec2 st = vec2(uv.x * 0.55 + uv.y * 0.25, uv.y * 1.7);
+    float n = fbm2(st * 1.3);
+    float n2 = fbm2(st * 4.2 + n * 2.0);
+    float c = smoothstep(0.6, 0.92, n * 0.72 + n2 * 0.38) * uCloud * smoothstep(0.0, 0.16, h);
+    vec3 lit = mix(vec3(1.0, 0.97, 0.92), uSunColor, 0.45);
+    vec3 cc = mix(uHorizon * 1.05, lit, 0.5 + 0.3 * n2);
+    cc += uSunColor * pow(sd, 5.0) * 0.7 * uSunVis;
+    cc *= mix(0.22, 1.0, uDay);
+    col = mix(col, cc, c * 0.8);
+  }
+
+  // two hazy mountain ranges on the horizon
+  float az = atan(d.z, d.x);
+  vec3 hz = normalize(vec3(d.x, 0.0001, d.z));
+  vec3 sz = normalize(vec3(uSunDir.x, 0.0001, uSunDir.z));
+  float rim = pow(max(dot(hz, sz), 0.0), 6.0) * 0.18 * uSunVis * uDay;
+  vec3 rock = mix(uHorizon, uZenith, 0.25) * vec3(0.92, 0.82, 0.8);
+  float e1 = 0.01 + ridgeH(az, 1.0) * 0.055;
+  float m1 = smoothstep(e1, e1 - 0.0012, h);
+  vec3 far = mix(rock, uHorizon, 0.55 + 0.35 * (1.0 - smoothstep(-0.01, e1, h))) + uSunColor * rim;
+  col = mix(col, far, m1);
+  float e2 = -0.004 + ridgeH(az + 1.3, 4.0) * 0.032;
+  float m2 = smoothstep(e2, e2 - 0.0012, h);
+  vec3 near = mix(rock * 0.82, uHorizon, 0.3 + 0.45 * (1.0 - smoothstep(-0.01, e2, h))) + uSunColor * rim * 1.4;
+  col = mix(col, near, m2);
+
   col = mix(col, uHorizon, uHaze * (1.0 - smoothstep(-0.1, 0.9, h) * 0.5));
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
+
+// Ground-hugging aerial haze: replaces three's fog chunks so every material gets
+// distance fog that thickens in dune valleys and thins on high ground.
+export function installHeightFog() {
+  const SC = THREE.ShaderChunk;
+  SC.fog_pars_vertex = '#ifdef USE_FOG\n  varying float vFogDepth;\n  varying vec3 vFogWorld;\n#endif';
+  SC.fog_vertex = '#ifdef USE_FOG\n  vFogDepth = - mvPosition.z;\n  vFogWorld = cameraPosition + transpose(mat3(viewMatrix)) * mvPosition.xyz;\n#endif';
+  SC.fog_pars_fragment = `#ifdef USE_FOG
+  uniform vec3 fogColor;
+  varying float vFogDepth;
+  varying vec3 vFogWorld;
+  #ifdef FOG_EXP2
+    uniform float fogDensity;
+  #else
+    uniform float fogNear;
+    uniform float fogFar;
+  #endif
+#endif`;
+  SC.fog_fragment = `#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+  #else
+    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+  #endif
+  float fogH = exp( - max( vFogWorld.y + 2.0, 0.0 ) * 0.03 );
+  float fogGround = ( 1.0 - exp( - vFogDepth * 0.004 ) ) * fogH * 0.32;
+  fogFactor = clamp( max( fogFactor * mix( 0.8, 1.0, fogH ), fogGround ), 0.0, 1.0 );
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+#endif`;
+}
 
 const C = (r, g, b) => new THREE.Color(r, g, b);
 const PAL = {
@@ -85,6 +167,8 @@ export class Sky {
       uTime: { value: 0 },
       uHaze: { value: 0 },
       uSunVis: { value: 1 },
+      uDay: { value: 1 },
+      uCloud: { value: 0.6 },
     };
     this.dome = new THREE.Mesh(
       new THREE.SphereGeometry(1500, 32, 16),
@@ -137,6 +221,8 @@ export class Sky {
     u.uStars.value = night * (1 - atmo.haze);
     u.uHaze.value = atmo.haze;
     u.uSunVis.value = 1 - atmo.haze * 0.85;
+    u.uDay.value = day;
+    u.uCloud.value = 0.55 * (1 - atmo.haze * 0.85);
     u.uTime.value = time;
     if (this.flash > 0) {
       hor.lerp(C(1.4, 1.35, 1.5), this.flash * 0.6);

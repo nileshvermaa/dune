@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createNoise2D, smoothstep, hash2, mulberry32 } from './noise.js';
-import { tex, makeRock } from './props.js';
+import { tex, makeRock, makeWormSkeleton, makeStoneCircle, makeSietch } from './props.js';
 import { detailed } from './materials.js';
 
 // Infinite dune field streamed in chunks around the player.
@@ -16,6 +16,8 @@ export const SAND_BED = -2.6;
 const C_TROUGH = new THREE.Color('#b47643');
 const C_CREST = new THREE.Color('#f2cd94');
 const C_BED = new THREE.Color('#a8774c');
+const C_RUST = new THREE.Color('#b0603a');
+const C_PALE = new THREE.Color('#f3dcb4');
 
 export class Terrain {
   constructor(scene, lines) {
@@ -129,6 +131,10 @@ export class Terrain {
         // windward slopes lighter, lee slopes darker
         const lee = Math.max(0, nx * 0.7 - nz * 0.3);
         c.multiplyScalar(1 - (1 - ny) * 0.25 - lee * 0.12);
+        const wx = ox + i * STEP, wz = oz + j * STEP;
+        const macro = this.noise(wx * 0.0016 + 50, wz * 0.0016 - 20);
+        c.lerp(C_RUST, Math.max(0, macro) * 0.32);
+        c.lerp(C_PALE, Math.max(0, -macro - 0.2) * 0.3 * t);
         c.lerp(C_BED, 1 - smoothstep(6, 40, D[k]));
         col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
       }
@@ -159,6 +165,17 @@ export class Terrain {
 
   // Deterministic giant rock formations far from the causeway.
   addLandmarks(mesh, cx, cz, H, D) {
+    const kc = (Math.floor(N / 2) + 1) * P + (Math.floor(N / 2) + 1);
+    const big = hash2(cx, cz, 555);
+    if (D[kc] > 170 && big < 0.09) {
+      const lm = big < 0.035 ? makeWormSkeleton() : big < 0.065 ? makeStoneCircle() : makeSietch();
+      lm.position.set(CHUNK / 2, H[kc] + (big < 0.035 ? 3 : 0.5), CHUNK / 2);
+      lm.rotation.y = hash2(cx, cz, 77) * Math.PI * 2;
+      lm.traverse((o) => { o.matrixAutoUpdate = false; });
+      lm.traverse((o) => o.updateMatrix());
+      mesh.add(lm);
+      return;
+    }
     const r = hash2(cx, cz, 99);
     const rnd = mulberry32((hash2(cx, cz, 7) * 1e9) | 0);
     const tries = r < 0.18 ? 1 : r < 0.3 ? 2 : 0;
