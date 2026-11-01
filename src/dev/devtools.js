@@ -20,18 +20,20 @@ export function attachDevtools(g) {
     if (seg.next && !p.pendingTurn && p.fly <= 0 && p.ride <= 0 && seg.length - p.s < Math.max(6, p.speed * 0.45)) {
       g.onAction(seg.turn < 0 ? 'left' : 'right');
     }
+    const look = p.speed * 0.5 + 4;
     // open sand: break rhythm at irregular intervals, lure the worm when it gets close
     if (p.onSand) {
       bot.next = bot.next ?? 0;
       if (g.time > bot.next) {
         const r = Math.random();
-        if (r < 0.45 && p.grounded) g.onAction('jump');
+        const danger = seg.gaps.some(([a]) => a - p.s > 0 && a - p.s < look) ||
+          seg.obstacles.some((o) => o.active && !o.fatal && o.s0 - p.s > 0 && o.s0 - p.s < look);
+        if (r < 0.45 && p.grounded && !danger) g.onAction('jump');
         else g.onAction(p.lane <= 0 ? 'right' : 'left');
         bot.next = g.time + 0.3 + Math.random() * 0.6;
       }
       if (p.sign > 80 && p.thumpers > 0) g.onAction('thumper');
     }
-    const look = p.speed * 0.5 + 4;
     let needJump = false, needSlide = false;
     const blocked = new Set();
     for (const o of seg.obstacles) {
@@ -44,13 +46,13 @@ export function attachDevtools(g) {
         if (d < p.speed * 0.2 + 0.5) needSlide = true;
       } else if (d < p.speed * 0.16 + 0.6) needJump = true;
     }
-    for (const [a] of seg.gaps) { const d = a - p.s; if (d > -0.5 && d < p.speed * 0.1 + 0.8) needJump = true; }
+    for (const [a] of seg.gaps) { const d = a - p.s; if (d > -0.5 && d < p.speed * 0.22 + 1.2) needJump = true; }
     if (blocked.has(p.lane)) {
       const free = [-1, 0, 1].filter((l) => !blocked.has(l)).sort((x, y) => Math.abs(x - p.lane) - Math.abs(y - p.lane));
       if (free.length) g.onAction(free[0] < p.lane ? 'left' : 'right');
     }
-    if (needJump && p.grounded) g.onAction('jump');
-    if (needSlide && p.grounded && p.slideT <= 0) g.onAction('slide');
+    if (needJump) g.onAction('jump');
+    if (needSlide && (p.slideT < 0.25 || !p.grounded)) g.onAction('slide');
   };
 
   // Simulate (with autopilot) up to a distance, then freeze the frame for inspection.

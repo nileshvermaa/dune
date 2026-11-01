@@ -4,7 +4,7 @@ import { speedAt, wormsignPerMetre, straightLimit } from '../../content/difficul
 import { zoneAt } from '../../content/zones.js';
 import { waypointAt } from '../../content/story.js';
 import { POWERUPS } from '../../content/powerups.js';
-import { GRAVITY, SLIDE_TIME, TRANCE_TIME, RIDE_OFFSET, FLY_H, UP, MILESTONES } from '../constants.js';
+import { GRAVITY, JUMP_V, SLIDE_TIME, TRANCE_TIME, RIDE_OFFSET, FLY_H, UP, MILESTONES } from '../constants.js';
 
 // The run itself: movement, corners, physics, water, wormsign, collisions and pickups.
 // Installed on Game.prototype (see game/Game.js), so `this` is the Game.
@@ -115,7 +115,20 @@ export const RunSystem = {
         p.y = 0;
         p.vy = 0;
         p.grounded = true;
-        if (p.slideQueued) { p.slideQueued = false; p.slideT = SLIDE_TIME * (this.mods.slide || 1); this.audio.slide(); }
+        if (p.jumpQueued) {
+          p.jumpQueued = false;
+          p.slideQueued = false;
+          p.slideT = 0;
+          p.vy = JUMP_V;
+          p.grounded = false;
+          p.airJumped = false;
+          this.audio.jump();
+          this.rhythmBreak();
+        } else if (p.slideQueued) {
+          p.slideQueued = false;
+          p.slideT = SLIDE_TIME * (this.mods.slide || 1);
+          this.audio.slide();
+        }
       } else if (p.y > 0 || !support) {
         p.grounded = false;
       }
@@ -188,6 +201,27 @@ export const RunSystem = {
         const w = this.track.localToWorld(seg, gy.lane * LANE_W, gy.s, this.v.b);
         this.glowPool.emit(w, { count: 40, spread: [0.6, 0.2, 0.6], vel: [0, 14, 0], velSpread: 3, life: 1.0, size: 0.5, color: this.colors.spice, gravity: -10 });
         this.dustPool.emit(w, { count: 20, spread: [1, 0.2, 1], vel: [0, 6, 0], velSpread: 3, life: 1.6, size: 1.6, grow: 2, color: this.colors.sand, gravity: -2, alpha: 0.6 });
+      }
+    }
+    // sinkholes: swirling sand particles near the pit warn the runner ahead
+    for (const [a, b] of seg.gaps) {
+      const d = a - p.s;
+      if (d > -5 && d < 32) {
+        const midS = (a + b) / 2;
+        const radX = HALF_W + 0.8;
+        const radZ = (b - a) / 2 + 0.3;
+        const th = (this.time * 5 + a) % (Math.PI * 2);
+        const lx = Math.cos(th) * radX;
+        const ls = midS + Math.sin(th) * radZ;
+        const w = this.track.localToWorld(seg, lx, ls, this.v.b);
+        w.y = 0.2;
+        this.dustPool.emit(w, {
+          count: 2, spread: [0.4, 0.1, 0.4], vel: [-Math.sin(th) * 2.5, 0.8, Math.cos(th) * 2.5],
+          velSpread: 1.2, life: 1.1, size: 1.6, grow: 2.2, color: this.colors.sand, gravity: -3, drag: 1.2, alpha: 0.5,
+        });
+        if (this.sky.night > 0.1) {
+          this.glowPool.emit(w, { count: 1, spread: [0.3, 0.1, 0.3], vel: [0, 0.8, 0], velSpread: 0.6, life: 0.6, size: 0.35, color: this.colors.spice, gravity: -1, drag: 2 });
+        }
       }
     }
     this.tips(seg);

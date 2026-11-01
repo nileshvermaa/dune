@@ -318,13 +318,20 @@ export class Track {
         }
       }
     }
-    // sinkholes: the sand pours away into darkness
+    // sinkholes: the sand pours away into darkness, with a raised warning rim
     for (const [a, b] of seg.gaps) {
       const pit = new THREE.Mesh(P.geo('sinkhole') || P.makeSinkholeGeometry(), P.mats.sinkhole);
       pit.scale.set(HALF_W + 1.2, 1, (b - a) / 2 + 0.4);
       pit.position.set(0, 0.02, -(a + b) / 2);
       pit.userData.shadow = false;
       g.add(pit);
+
+      const rim = new THREE.Mesh(P.geo('sinkholeRim') || P.makeSinkholeRimGeometry(), P.mats.sinkholeRim);
+      rim.scale.set(HALF_W + 1.25, 1, (b - a) / 2 + 0.45);
+      rim.position.set(0, 0.03, -(a + b) / 2);
+      rim.castShadow = true;
+      rim.receiveShadow = true;
+      g.add(rim);
     }
 
     // trail stakes down both edges, every 9 m (none in a sinkhole); they carry on round the

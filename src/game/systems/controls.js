@@ -66,18 +66,26 @@ export const ControlsSystem = {
         p.vy = JUMP_V;
         p.grounded = false;
         p.slideT = 0;
+        p.slideQueued = false;
+        p.jumpQueued = false;
         p.airJumped = false;
         this.audio.jump();
         this.rhythmBreak();
       } else if (this.mods.doubleJump && !p.airJumped && p.y > -0.3) {
         p.vy = JUMP_V * 0.92;
         p.airJumped = true;
+        p.jumpQueued = false;
+        p.slideQueued = false;
         this.audio.jump();
         this.puff(8, 0.5);
         this.rhythmBreak();
+      } else {
+        p.jumpQueued = true;
+        p.slideQueued = false;
       }
     } else if (a === 'slide') {
       if (p.fly > 0) return;
+      p.jumpQueued = false;
       if (p.grounded) {
         if (p.slideT <= 0) { this.audio.slide(); this.rhythmBreak('slide'); }
         p.slideT = SLIDE_TIME * (this.mods.slide || 1);

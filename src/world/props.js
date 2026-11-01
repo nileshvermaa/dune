@@ -75,6 +75,7 @@ export function initProps() {
   mats.rushHalo = new THREE.SpriteMaterial({ map: tex.glow, color: new THREE.Color(1.0, 0.4, 0.08), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9 });
   // sinkhole: unlit, dark at the throat, fading into the sand at the rim (alpha in vertex colours)
   mats.sinkhole = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  mats.sinkholeRim = new THREE.MeshStandardMaterial({ color: '#442312', roughness: 0.95, emissive: '#160a03', emissiveIntensity: 0.35 });
   // dust devil: translucent spinning shells of sand
   mats.devil = new THREE.MeshBasicMaterial({ map: tex.sand.map, color: '#d6ab7c', transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false });
 
@@ -758,12 +759,32 @@ export function makeSinkholeGeometry() {
       const r = Math.hypot(x, z), a = Math.atan2(z, x);
       const spiral = 0.5 + 0.5 * Math.sin(a * 3 + r * 9);
       const k = Math.pow(r, 1.4) * (0.75 + 0.25 * spiral);
-      c[i * 4] = 0.04 + k * 0.62; c[i * 4 + 1] = 0.025 + k * 0.45; c[i * 4 + 2] = 0.015 + k * 0.28;
+      c[i * 4] = 0.02 + k * 0.55; c[i * 4 + 1] = 0.012 + k * 0.38; c[i * 4 + 2] = 0.008 + k * 0.22;
       c[i * 4 + 3] = 1 - Math.pow(Math.max(0, (r - 0.7) / 0.3), 1.5);
+      p.setY(i, -0.35 * (1 - Math.min(1, r)));
     }
     rings.setAttribute('color', new THREE.BufferAttribute(c, 4));
+    rings.computeVertexNormals();
     geo.dispose();
     return rings;
+  });
+}
+
+// raised rim around the sinkhole: catches light, casts a shadow, readable from far off
+export function makeSinkholeRimGeometry() {
+  return cached('sinkholeRim', () => {
+    const geo = new THREE.RingGeometry(0.82, 1.25, 48, 6);
+    geo.rotateX(-Math.PI / 2);
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      const r = Math.hypot(x, z);
+      const t = (r - 0.82) / (1.25 - 0.82);
+      const h = Math.sin(t * Math.PI) * 0.28 - (1 - t) * 0.1;
+      p.setY(i, h);
+    }
+    geo.computeVertexNormals();
+    return geo;
   });
 }
 

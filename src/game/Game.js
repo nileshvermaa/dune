@@ -152,7 +152,7 @@ export class Game {
     const seg = this.track.segments[0];
     this.p = {
       seg, s: 6, lane: 0, laneX: 0, prevLaneX: 0, prevS: 6, y: 0, vy: 0, grounded: true,
-      slideT: 0, slideQueued: false, pendingTurn: 0, speed: 0, runDist: 0,
+      slideT: 0, slideQueued: false, jumpQueued: false, pendingTurn: 0, speed: 0, runDist: 0,
       score: 0, spice: 0, mult: 1, shield: false, trance: 0, fly: 0, invuln: 0,
       stumbleT: 0, wormGap: 45, combo: 0, lastPickup: 0, stepT: 0,
       zoneIndex: 0, milestone: 0, spiceMilestone: 0, tips: 0, tipFor: null, visualYaw: 0, alive: true,
