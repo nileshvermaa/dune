@@ -192,13 +192,13 @@ export class Game {
     this.state = 'running';
     this.cinema(false);
     this.ui.hud.classList.remove('hidden');
+    this.sky.cycle = 0.2; // every crossing sets out in the morning light
     this.chapter(zoneAt(0).zone.id);
-    this.cinema(true, 2600);
     this.audio.braam(0.8);
     this.syncInventory();
     this.drawStride();
     this.updateGoal();
-    setTimeout(() => this.state === 'running' && this.narrate(BEATS.setOut, 4200), 900);
+    setTimeout(() => this.state === 'running' && this.narrate(BEATS.setOut, 4200), 3500); // after the chapter card
   }
 
   pause() {

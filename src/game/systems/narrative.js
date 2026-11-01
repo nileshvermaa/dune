@@ -105,12 +105,12 @@ export const NarrativeSystem = {
     $('zone-dashes').innerHTML = ZONES.map((_, i) => `<i class="${i < inCycle ? 'on' : ''}"></i>`).join('');
     this.banner(c.title);
     if (p.chapter > 1) {
-      this.cinema(true, 3600);
+      // no letterbox mid-run: it would hide the HUD and the trail ahead
       this.audio.braam(0.6);
       this.app.classList.add('chaptering');
       clearTimeout(this.duskTimer);
       this.duskTimer = setTimeout(() => this.app.classList.remove('chaptering'), 3000);
-      setTimeout(() => this.state === 'running' && this.narrate(c.line, 5200), 1400);
+      setTimeout(() => this.state === 'running' && this.narrate(c.line, 5200), 3500); // once the card has gone
     }
   },
 

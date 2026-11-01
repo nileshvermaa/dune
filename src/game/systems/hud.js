@@ -153,8 +153,8 @@ export const HudSystem = {
         tip = isTouch ? 'Tap THUMPER to lure the worm' : 'E — plant a thumper';
       } else if (rockAhead && p.sign > 30) {
         tip = 'Stone ahead — the Maker cannot follow';
-      } else if (p.onSand && p.sign > 35) {
-        tip = isTouch ? 'Swipe unevenly — break your rhythm' : 'Jump · slide · weave — unevenly';
+      } else if (p.onSand && p.straight > 60) {
+        tip = isTouch ? 'Swipe left or right — never run straight' : '← → Weave — never run straight';
       } else {
         for (const o of seg.obstacles) {
           const d = o.s0 - p.s;
@@ -168,6 +168,15 @@ export const HudSystem = {
       }
     }
     if (p.qte) tip = null; // the prompt has the stage
+    // one line of words at a time: narration and chapter cards take the slot first, and each
+    // tutorial tip is shown only its first three times a session
+    if (tip && (!ui.narration.classList.contains('hidden') || !ui.zoneBanner.classList.contains('hidden'))) tip = null;
+    if (tip && !tip.includes('turn') && !tip.includes('Turn')) {
+      const seen = (this.tipSeen ||= {});
+      if (this.lastTip !== tip) seen[tip] = (seen[tip] || 0) + 1;
+      if (seen[tip] > 3) tip = null;
+    }
+    this.lastTip = tip;
     if (tip) {
       ui.tip.classList.remove('hidden');
       this.setText('tip', ui.tip, tip);

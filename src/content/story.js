@@ -108,6 +108,7 @@ export const DEATHS = {
   crash: ['Broken on the Stones', 'The road was kind. Ishra was too fast for it.'],
   geyser: ['Consumed by a Spice Blow', 'The desert exhaled, and Ishra was in its breath.'],
   fall: ['Swallowed by the Sand', 'Where the road broke, the desert was waiting.'],
+  edge: ['Lost to the Deep Sand', 'There was no turn there. Off the trail the sand is soft and deep, and the Maker waits beneath it.'],
   worm: ['Taken by the Maker', 'The rhythm carried. The Maker answered.'],
   thirst: ['The Desert Drank Its Fill', 'Every drop returns to Arrakis in the end.'],
 };

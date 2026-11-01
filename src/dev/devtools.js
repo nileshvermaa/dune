@@ -112,5 +112,66 @@ export function attachDevtools(g) {
     return on;
   };
 
-  Object.assign(window, { __game: g, __bot: bot, __sim: sim, __studio: studio, __photos: photos });
+  // Play the real frame loop on a fake clock (works while the page is hidden). Drawing is skipped
+  // unless draw is true; the autopilot steers when auto is true; each(i) runs after every frame.
+  let clock = 0;
+  const play = (secs, { auto = true, draw = false, each } = {}) => {
+    const raf = window.requestAnimationFrame, render = g.renderer.render, comp = g.composer && g.composer.render;
+    window.requestAnimationFrame = () => 0;
+    if (!draw) {
+      g.renderer.render = () => {};
+      if (g.composer) g.composer.render = () => {};
+    }
+    clock = Math.max(clock, performance.now());
+    try {
+      for (let i = 0; i < Math.max(1, Math.round(secs * 60)); i++) {
+        clock += 1000 / 60;
+        g.last = clock - 1000 / 60;
+        if (auto && g.state === 'running') bot();
+        g.loop(clock);
+        if (each) each(i);
+        if (g.state === 'over') break;
+      }
+    } finally {
+      window.requestAnimationFrame = raf;
+      g.renderer.render = render;
+      if (g.composer) g.composer.render = comp;
+    }
+    return { state: g.state, dist: Math.round(g.p.runDist), cause: g.deathCause };
+  };
+  // draw exactly one frame, for a screenshot
+  const frame = () => play(0, { auto: false, draw: true });
+
+  // HUD pieces whose boxes cover the runner on screen right now (the runner must stay in clear view)
+  const covered = () => {
+    const cam = g.camera, W = innerWidth, H = innerHeight, p = g.runner.root.position;
+    cam.updateMatrixWorld();
+    const v = p.clone();
+    const right = p.clone().set(1, 0, 0).applyQuaternion(cam.quaternion).multiplyScalar(0.5);
+    const pts = [[0, 0, 0], [0, 1.9, 0], [right.x, 1, right.z], [-right.x, 1, -right.z]].map(([x, y, z]) => {
+      v.set(p.x + x, p.y + y, p.z + z).project(cam);
+      return [((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H];
+    });
+    const box = {
+      x0: Math.min(...pts.map((q) => q[0])), x1: Math.max(...pts.map((q) => q[0])),
+      y0: Math.min(...pts.map((q) => q[1])), y1: Math.max(...pts.map((q) => q[1])),
+    };
+    const shown = (e) => {
+      for (let a = e; a && a !== document.body; a = a.parentElement) {
+        const s = getComputedStyle(a);
+        if (s.display === 'none' || s.visibility === 'hidden' || +s.opacity < 0.05) return false;
+      }
+      return true;
+    };
+    const hits = [];
+    const pieces = '#hud .hud-left > *, #hud .hud-right > *, #narration, #tip, #toasts > *, #zone-banner, #turn-hint, #qte, #ability-btn, #thumper-btn, #worm-meter, #pause-btn';
+    for (const e of document.querySelectorAll(pieces)) {
+      const b = e.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2 || !shown(e)) continue;
+      if (b.right > box.x0 && b.left < box.x1 && b.bottom > box.y0 && b.top < box.y1) hits.push(`${e.id || e.className}: ${e.textContent.trim().slice(0, 30)}`);
+    }
+    return { box: Object.values(box).map(Math.round), hits };
+  };
+
+  Object.assign(window, { __game: g, __bot: bot, __sim: sim, __play: play, __frame: frame, __covered: covered, __studio: studio, __photos: photos });
 }

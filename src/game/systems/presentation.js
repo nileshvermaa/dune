@@ -110,12 +110,15 @@ export const PresentationSystem = {
       const sp = clamp((p.speed - 15) / 19, 0, 1);
       const fly = p.fly > 0 ? 1 : 0;
       const ride = p.ride > 0 ? 1 : 0;
-      const back = 7.4 + sp * 1.4 + fly * 3 + ride * 4;
+      // phones held upright see a narrow slice: widen the view and lift the camera so the lanes
+      // either side and the trail ahead stay in frame, with the runner in the lower third
+      const tall = clamp((1.1 - cam.aspect) / 0.6, 0, 1);
+      const back = 7.4 + sp * 1.4 + fly * 3 + ride * 4 - tall * 1.6;
       tp.copy(pos).addScaledVector(fwd, -back);
-      tp.y = Math.max(pos.y, 0) * 0.55 + 3.4 + fly * 2.5 + ride * 2.5;
-      look.copy(pos).addScaledVector(fwd, 8);
-      look.y = Math.max(pos.y, 0) * 0.7 + 1.2;
-      cam.fov = damp(cam.fov, 60 + sp * 12 + (p.trance > 0 ? -4 : 0), 3, dt);
+      tp.y = Math.max(pos.y, 0) * 0.55 + 3.4 + fly * 2.5 + ride * 2.5 + tall * 1.1;
+      look.copy(pos).addScaledVector(fwd, 8 + tall * 4);
+      look.y = Math.max(pos.y, 0) * 0.7 + 1.2 - tall * 0.4;
+      cam.fov = damp(cam.fov, 60 + sp * 12 + tall * 16 + (p.trance > 0 ? -4 : 0), 3, dt);
       rate = 12;
     } else if (st === 'chars') {
       // the carrier on show: a slow turn around them at full height, above the cards

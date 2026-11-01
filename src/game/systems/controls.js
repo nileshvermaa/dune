@@ -1,4 +1,3 @@
-import { clamp } from '../../engine/noise.js';
 import { DECK_HALF } from '../../world/layout.js';
 import { JUMP_V, SLIDE_TIME } from '../constants.js';
 import { ABILITIES } from '../../content/abilities.js';
@@ -37,16 +36,30 @@ export const ControlsSystem = {
     if (p.ride > 0) return;
     if (a === 'left' || a === 'right') {
       const dir = a === 'left' ? -1 : 1;
-      // approaching a corner, a press toward the bend is the turn (Temple Run style)
       const seg = p.seg;
-      if (seg.next && !p.pendingTurn && dir === seg.turn && p.fly <= 0 && this.inTurnWindow()) {
+      if (p.fly > 0 || p.strayed) return;
+      // approaching a corner, a press toward the bend is the turn (Temple Run style)
+      const towardBend = seg.next && !p.pendingTurn && dir === seg.turn;
+      const commitTurn = () => {
         p.pendingTurn = dir;
         this.audio.whoosh(500, 1500, 0.18, 0.12);
         this.rhythmBreak('turn');
+      };
+      if (towardBend && this.inTurnWindow()) return commitTurn();
+      if (Math.abs(p.lane + dir) <= 1) {
+        p.lane += dir;
+        this.audio.whoosh(600, 1200, 0.12, 0.1);
+        this.rhythmBreak('lane');
         return;
       }
-      const nl = clamp(p.lane + dir, -1, 1);
-      if (nl !== p.lane) { p.lane = nl; this.audio.whoosh(600, 1200, 0.12, 0.1); this.rhythmBreak('lane'); }
+      // already on the trail's edge: toward a bend that is in sight, take it as an early turn;
+      // anywhere else there is no turn, and the runner strides off the trail into the deep sand
+      if (towardBend && seg.length - p.s < Math.max(30, p.speed * 1.9)) return commitTurn();
+      // a double swipe on a turn already taken (or just made) is not a step off the edge
+      if (p.pendingTurn || this.time - (p.turnedAt ?? -9) < 0.7) return;
+      p.strayed = dir;
+      p.lane = dir * 2.4;
+      this.audio.whoosh(400, 900, 0.2, 0.12);
     } else if (a === 'jump' || a === 'tap') {
       if (p.fly > 0) return;
       if (p.grounded) {

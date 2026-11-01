@@ -327,6 +327,24 @@ export class Track {
       g.add(pit);
     }
 
+    // trail stakes down both edges, every 9 m (none in a sinkhole); they carry on round the
+    // outside of the bend, so the corner reads from far off
+    const stakes = [];
+    for (let s = first ? 12 : 4; s < L - 2; s += 9) {
+      if (this.inGap(seg, s, -1.2)) continue;
+      for (const side of [-1, 1]) stakes.push([side * (HALF_W + 0.55), s, side * 0.4]);
+    }
+    for (let k = 1; k <= 3; k++) stakes.push([-seg.turn * (HALF_W + 0.55), L + k * 3, 0]);
+    const im = new THREE.InstancedMesh(P.stakeGeometry(), P.mats.stake, stakes.length);
+    const m4 = new THREE.Matrix4();
+    stakes.forEach(([x, s, ry], i) => im.setMatrixAt(i, m4.makeRotationY(ry + (s % 5) * 0.3).setPosition(x, -0.05, -s)));
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+    im.castShadow = true;
+    im.userData.shadow = false;
+    g.add(im);
+    seg.disposables.push(im);
+
     // the turn: glowing arrows on the sand, a cairn on the outside, and a rock face ahead
     const arrowGeo = new THREE.PlaneGeometry(3.2, 3.2);
     seg.geos.push(arrowGeo);

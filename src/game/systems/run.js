@@ -1,5 +1,5 @@
 import { clamp, damp } from '../../engine/noise.js';
-import { LANE_W } from '../../world/layout.js';
+import { LANE_W, HALF_W } from '../../world/layout.js';
 import { speedAt, wormsignPerMetre, straightLimit } from '../../content/difficulty.js';
 import { zoneAt } from '../../content/zones.js';
 import { waypointAt } from '../../content/story.js';
@@ -21,6 +21,7 @@ export const RunSystem = {
     p.laneV = 0;
     p.seg = next;
     p.pendingTurn = 0;
+    p.turnedAt = this.time;
     this.audio.turn();
   },
 
@@ -85,6 +86,9 @@ export const RunSystem = {
     const lv = p.laneV || 0;
     p.laneV = lv + ((p.lane * LANE_W - p.laneX) * LK - lv * LC) * gdt;
     p.laneX += p.laneV * gdt;
+
+    // off the trail's edge there is only deep sand (see onAction in controls.js)
+    if (p.strayed && Math.abs(p.laneX) > HALF_W + 0.8) return this.die('edge');
 
     const riding = p.ride > 0 || Math.abs(p.rideOff) > 0.6;
     if (p.fly > 0) {
@@ -243,23 +247,24 @@ export const RunSystem = {
   devilHit(o) {
     const p = this.p;
     p.invuln = 0.9;
-    p.sign = Math.min(100, p.sign + 28);
-    p.water = Math.max(0, p.water - 8);
+    p.sign = Math.min(100, p.sign + 12);
+    p.water = Math.max(0, p.water - 4);
     const mid = (o.x0 + o.x1) / 2;
     p.lane = clamp(p.lane + (p.laneX >= mid ? 1 : -1), -1, 1);
-    this.stumble();
+    this.stumble(8);
     this.flash('#d9a066', 0.45);
     this.dustPool.emit(this.v.b.copy(this.playerPos).addScaledVector(UP, 1.2), { count: 50, spread: [1.5, 1.2, 1.5], vel: [0, 3, 0], velSpread: 6, life: 1.4, size: 1.6, grow: 2, color: this.colors.sand, gravity: -1, drag: 1, alpha: 0.7 });
   },
 
-  stumble() {
+  // a misstep: costs breath and water, and on open sand the thud carries to the Maker
+  stumble(signCost = 14) {
     const p = this.p;
     this.shake = Math.max(this.shake, 0.5);
     this.audio.stumble();
     this.flash('#ff5a1a', 0.25);
     p.stumbleT = 0.7;
     p.water = Math.max(0, p.water - 6);
-    if (p.onSand) p.sign = Math.min(100, p.sign + 20);
+    if (p.onSand) p.sign = Math.min(100, p.sign + signCost);
   },
 
   breakShield() {

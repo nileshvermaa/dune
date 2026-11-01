@@ -202,7 +202,7 @@ export class Sky {
   setShadows(on) { this.sun.castShadow = on; }
 
   update(dt, center, atmo, time) {
-    this.cycle = (this.cycle + (dt / this.cycleLength) * (this.night > 0.5 ? 1.8 : 1)) % 1;
+    this.cycle = (this.cycle + (dt / this.cycleLength) * (this.night > 0.5 ? 2.4 : 1)) % 1; // nights pass quickly
     const a = this.cycle * Math.PI * 2;
     const sunDir = this._sunDir.set(Math.cos(a) * 0.8, Math.sin(a), -0.45).normalize();
     const el = sunDir.y;
@@ -240,7 +240,7 @@ export class Sky {
     const useSun = el > -0.06;
     const ldir = useSun ? sunDir : u.uMoon1.value;
     const sunI = smoothstep(-0.06, 0.12, el) * 3.5;
-    const moonI = night * 0.8;
+    const moonI = night * 1.7; // a bright moon: the trail must stay readable at night
     this.sun.intensity = (useSun ? sunI : moonI) * (1 - atmo.haze * 0.6) + this.flash * 4;
     this.sun.color.copy(useSun ? u.uSunColor.value : PAL.moonLight);
     this.sun.position.copy(center).addScaledVector(ldir, 120);
@@ -249,6 +249,6 @@ export class Sky {
     this.hemi.color.copy(u.uZenith.value).lerp(hor, 0.5).multiplyScalar(1.2).lerp(PAL.moonLight, night * 0.35);
     this.hemi.groundColor.setRGB(0.55, 0.36, 0.2).multiplyScalar(lerp(0.35, 1, day));
     // low fill by day so dune lee faces fall into real shadow; storms flatten the light
-    this.hemi.intensity = lerp(0.62, 0.82, day) + night * 0.3 + atmo.haze * 0.75 + this.flash * 2;
+    this.hemi.intensity = lerp(0.62, 0.82, day) + night * 0.75 + atmo.haze * 0.75 + this.flash * 2;
   }
 }

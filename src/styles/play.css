@@ -1,0 +1,65 @@
+/* The play screen, last in the cascade so it settles where everything goes. The runner holds the
+   lower middle of the frame, so nothing may sit there:
+     top corners     score and water (left), distance and pause (right)
+     top centre      one line of words at a time: narration, else a tip, else a chapter card
+     upper middle    the turn arrow, above the runner's head
+     bottom          the wormsign bar, then the ability and thumper buttons in one row     */
+
+/* the rhythm trace is retired: the wormsign bar now carries the straight-line warning */
+#stride { display: none !important; }
+
+#narration, #app:not(.cinema) #narration {
+  top: max(18px, env(safe-area-inset-top)); bottom: auto;
+  width: min(560px, 40vw);
+  font-size: clamp(12px, 1.35vw, 16px); line-height: 1.55;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+#tip { top: max(22px, env(safe-area-inset-top)); bottom: auto; width: min(560px, 40vw); white-space: normal; text-align: center; line-height: 1.8; }
+#zone-banner { top: max(26px, env(safe-area-inset-top)); gap: 10px; }
+#zone-banner span { font-size: clamp(16px, 2.4vw, 30px); }
+#turn-hint { top: 30%; }
+#app.cinema #narration { top: calc(var(--bar) + 16px); }
+
+/* ability and thumper side by side in the bottom-right corner */
+#ability-btn { bottom: max(28px, calc(env(safe-area-inset-bottom) + 16px)); right: 228px; min-width: 0; }
+#thumper-btn { bottom: max(28px, calc(env(safe-area-inset-bottom) + 16px)); right: 32px; min-width: 180px; }
+#worm-meter { bottom: max(96px, calc(env(safe-area-inset-bottom) + 84px)); }
+#toasts { top: auto; bottom: max(140px, calc(env(safe-area-inset-bottom) + 128px)); right: 32px; }
+
+/* short landscape screens (phones on their side, small laptop windows): tighter everywhere */
+@media (max-height: 560px) {
+  .hud-left, .hud-right, #pause-btn { top: max(14px, env(safe-area-inset-top)); }
+  .hud-left { gap: 4px; }
+  #score { font-size: 26px; }
+  .gauge { margin-top: 6px; width: 150px; }
+  #powerups { margin-top: 6px; gap: 4px; }
+  .hud-left > .hud-cap.dim, .hud-right > .hud-goal, #inventory { display: none !important; }
+  #worm-meter { bottom: max(70px, calc(env(safe-area-inset-bottom) + 58px)); width: min(520px, 54vw); }
+  #ability-btn, #thumper-btn { bottom: max(12px, env(safe-area-inset-bottom)); min-height: 40px; }
+  #toasts { bottom: 110px; }
+  #turn-hint { font-size: 44px; }
+}
+
+/* phones held upright: the words drop below the top corners, the buttons fill the bottom row */
+@media (max-width: 700px) {
+  .hud-right > .hud-goal { display: none !important; }
+  #narration, #app:not(.cinema) #narration, #tip {
+    top: max(176px, calc(env(safe-area-inset-top) + 152px)); width: calc(100% - 48px);
+    font-size: 13px; letter-spacing: 0.02em;
+  }
+  #tip { font-size: 10px; letter-spacing: 0.3em; }
+  #zone-banner { top: max(176px, calc(env(safe-area-inset-top) + 152px)); }
+  #zone-banner small { font-size: 9px; letter-spacing: 0.7em; margin-right: -0.7em; }
+  #zone-banner span { font-size: 17px; letter-spacing: 0.4em; margin-right: -0.4em; }
+  #toasts { left: 24px; right: 24px; align-items: center; top: max(250px, calc(env(safe-area-inset-top) + 226px)); bottom: auto; }
+  #worm-meter { left: 20px; right: 20px; width: auto; transform: none; bottom: max(84px, calc(env(safe-area-inset-bottom) + 72px)); }
+  #ability-btn, #thumper-btn {
+    bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); min-height: 50px; min-width: 0;
+    width: calc(50% - 26px); padding: 0 10px; justify-content: center;
+  }
+  #ability-btn { left: 20px; right: auto; }
+  #thumper-btn { right: 20px; left: auto; }
+  #thumper-btn span { font-size: 10px; letter-spacing: 0.25em; }
+  #ability-btn kbd, #thumper-btn kbd { display: none; }
+  #turn-hint { top: 40%; }
+}

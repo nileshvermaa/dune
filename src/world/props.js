@@ -50,6 +50,7 @@ export function initProps() {
   mats.dark = new THREE.MeshBasicMaterial({ color: '#120904' });
   mats.vent = new THREE.MeshStandardMaterial({ color: '#2a1408', emissive: '#ff5a10', emissiveIntensity: 0.4, roughness: 1 });
   mats.eruption = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 1.1, 0.25), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
+  mats.stake = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, emissive: '#3a1c08', emissiveIntensity: 0.25 });
   mats.arrow = new THREE.MeshBasicMaterial({ map: tex.arrow, color: new THREE.Color(2.4, 1.1, 0.35), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   mats.spicePatch = new THREE.MeshBasicMaterial({ map: tex.glow, color: new THREE.Color(1.6, 0.55, 0.12), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
 
@@ -951,6 +952,16 @@ function buildObeliskGlyphs() {
     }
   }
   return merge(parts);
+}
+
+// A Fremen trail stake: a weathered pole with a pale cloth strip, planted along both edges of the
+// trail so its width and every bend read from far off on open sand. One geometry, instanced.
+export function stakeGeometry() {
+  return cached('stake', () => merge([
+    [new THREE.CylinderGeometry(0.045, 0.06, 1.5, 6), col('#5a3a22'), M(0, 0.75, 0)],
+    [new THREE.BoxGeometry(0.03, 0.32, 0.26), col('#efe2c6'), M(0, 1.28, 0.13, 0, 0, 0.08)],
+    [new THREE.ConeGeometry(0.11, 0.16, 6), col('#7a5a3c'), M(0, 0.06, 0)],
+  ]));
 }
 
 export function makeObelisk() {
