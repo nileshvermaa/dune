@@ -83,10 +83,14 @@ export const HudSystem = {
   },
 
   toast(text) {
+    const toasts = this.ui.toasts;
+    while (toasts.children.length >= 2) {
+      toasts.firstElementChild.remove();
+    }
     const d = document.createElement('div');
     d.className = 'toast';
     d.textContent = text;
-    this.ui.toasts.appendChild(d);
+    toasts.appendChild(d);
     setTimeout(() => d.remove(), 3100);
   },
 
@@ -98,7 +102,10 @@ export const HudSystem = {
     void b.offsetWidth;
     b.style.animation = '';
     clearTimeout(this.bannerTimer);
-    this.bannerTimer = setTimeout(() => b.classList.add('hidden'), 3400);
+    this.bannerTimer = setTimeout(() => {
+      b.classList.add('hidden');
+      if (this.flushNarrate) this.flushNarrate();
+    }, 3400);
   },
 
   flash(color = '#fff', strength = 0.6) {

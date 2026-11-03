@@ -42,6 +42,7 @@ export const RenderSystem = {
       }).catch((err) => console.warn('SMAA unavailable', err));
       this.perf = { avg: 16, slowFor: 0, step: 0 };
     }
+    this.perf = this.perf || { avg: 16, slowFor: 0, step: 0 };
     if (changed) {
       this.scene.traverse((o) => {
         if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; });
@@ -86,10 +87,21 @@ export const RenderSystem = {
   },
 
   // If high quality can't hold its frame rate, shed cost in steps: AO, then resolution, then rays.
+  // On low quality, drop pixel ratio to 0.75 when average frame time exceeds 40 ms.
   governPerformance(rawDt) {
-    const pf = this.perf;
-    if (!pf || this.quality !== 'high' || pf.hold || this.state !== 'running' || document.hidden || rawDt > 0.25) return;
+    const pf = (this.perf = this.perf || { avg: 16, slowFor: 0, step: 0 });
+    if (pf.hold || this.state !== 'running' || document.hidden || rawDt > 0.25) return;
     pf.avg += (rawDt * 1000 - pf.avg) * 0.05;
+    if (this.quality === 'low') {
+      if (pf.droppedLowPR) return;
+      pf.slowLowFor = pf.avg > 40 ? (pf.slowLowFor || 0) + rawDt : Math.max(0, (pf.slowLowFor || 0) - rawDt * 0.5);
+      if (pf.slowLowFor >= 2.5) {
+        pf.droppedLowPR = true;
+        this.renderer.setPixelRatio(0.75);
+        this.resize();
+      }
+      return;
+    }
     pf.slowFor = pf.avg > 24 ? pf.slowFor + rawDt : Math.max(0, pf.slowFor - rawDt * 0.5);
     if (pf.slowFor < 3 || pf.step >= 3) return;
     pf.step++;

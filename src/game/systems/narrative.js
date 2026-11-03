@@ -1,3 +1,4 @@
+import { clamp } from '../../engine/noise.js';
 import { ZONES } from '../../content/zones.js';
 import { BEATS, INTRO, chapterFor, roman, waypointAt } from '../../content/story.js';
 import { INTRO_SHOT } from '../constants.js';
@@ -19,6 +20,11 @@ export const NarrativeSystem = {
 
   updateIntro(dt) {
     this.introT += dt;
+    const cam = this.camera;
+    if (cam) {
+      // widen the view and centre the runner when the screen is taller than wide
+      this.introTall = clamp((1.0 - cam.aspect) / 0.5, 0, 1);
+    }
     const idx = Math.floor(this.introT / INTRO_SHOT);
     if (idx >= INTRO.length) return this.endIntro();
     if (idx !== this.introIdx) {
@@ -80,6 +86,18 @@ export const NarrativeSystem = {
   },
 
   narrate(text, ms = 4600) {
+    if (!text) return;
+    this.narrQueue = this.narrQueue || [];
+    const bannerActive = this.ui.zoneBanner && !this.ui.zoneBanner.classList.contains('hidden');
+    const narrActive = this.ui.narration && !this.ui.narration.classList.contains('hidden');
+    if (bannerActive || narrActive) {
+      if (this.narrQueue.length < 5) this.narrQueue.push({ text, ms });
+      return;
+    }
+    this._showNarrate(text, ms);
+  },
+
+  _showNarrate(text, ms) {
     const el = this.ui.narration;
     el.textContent = text;
     el.classList.remove('hidden');
@@ -87,7 +105,19 @@ export const NarrativeSystem = {
     void el.offsetWidth;
     el.style.animation = '';
     clearTimeout(this.narrTimer);
-    this.narrTimer = setTimeout(() => el.classList.add('hidden'), ms);
+    this.narrTimer = setTimeout(() => {
+      el.classList.add('hidden');
+      this.flushNarrate();
+    }, ms);
+  },
+
+  flushNarrate() {
+    if (!this.narrQueue || !this.narrQueue.length) return;
+    if (this.state !== 'running' && this.state !== 'intro') return;
+    const bannerActive = this.ui.zoneBanner && !this.ui.zoneBanner.classList.contains('hidden');
+    if (bannerActive) return;
+    const next = this.narrQueue.shift();
+    if (next) this._showNarrate(next.text, next.ms);
   },
 
   chapter(zoneId) {

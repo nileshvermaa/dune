@@ -34,14 +34,16 @@
   .hud-right > .hud-cap, #inventory { display: none; }
   #tip { white-space: normal; width: 90%; text-align: center; line-height: 1.8; }
   .title-meta .btn-ghost { white-space: nowrap; }
-  .title-center { top: 27%; }
+  .title-center { top: 16%; }
   .title-center .eyebrow { font-size: 10px; letter-spacing: 0.7em; margin-right: -0.7em; }
   h1 span { font-size: 44px; letter-spacing: 0.42em; margin-right: -0.42em; }
   h1 em { font-size: 12px; letter-spacing: 1em; margin-right: -1em; margin-top: 14px; }
   .title-center .btn-line { display: none; }
-  .laws { left: 24px; right: 24px; bottom: 170px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+  .story-tease { display: none; }
+  .laws { left: 24px; right: 24px; bottom: calc(max(36px, env(safe-area-inset-bottom)) + 130px); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+  .laws li { padding-top: 8px; }
   .laws b { font-size: 11px; letter-spacing: 0.3em; }
-  .laws span { font-size: 13px; }
+  .laws span { font-size: 12px; line-height: 1.35; }
   .bar-bottom { background: transparent; padding: 0 24px max(36px, env(safe-area-inset-bottom)); flex-direction: column; align-items: stretch; gap: 18px; }
   #title .saying { display: none; }
   .title-meta { justify-content: space-between; gap: 8px; }

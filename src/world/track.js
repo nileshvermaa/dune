@@ -24,13 +24,18 @@ const TILE = {
 };
 
 export class Track {
-  constructor(scene, terrain) {
+  constructor(scene, terrain, game = null) {
     this.scene = scene;
     this.terrain = terrain;
+    this.game = game;
     this.lines = terrain.lines;
     this.segments = [];
     this.ahead = 650;
     this.reset(1);
+  }
+
+  get isLowQuality() {
+    return this.game?.quality === 'low';
   }
 
   reset(seed) {
@@ -334,10 +339,11 @@ export class Track {
       g.add(rim);
     }
 
-    // trail stakes down both edges, every 9 m (none in a sinkhole); they carry on round the
+    // trail stakes down both edges, every 9 m (18 m on low); they carry on round the
     // outside of the bend, so the corner reads from far off
     const stakes = [];
-    for (let s = first ? 12 : 4; s < L - 2; s += 9) {
+    const stakeStep = this.isLowQuality ? 18 : 9;
+    for (let s = first ? 12 : 4; s < L - 2; s += stakeStep) {
       if (this.inGap(seg, s, -1.2)) continue;
       for (const side of [-1, 1]) stakes.push([side * (HALF_W + 0.55), s, side * 0.4]);
     }
@@ -420,7 +426,8 @@ export class Track {
     }
     const peb = [];
     const w = new THREE.Vector3();
-    for (let s = first ? -55 : 0; s < L; s += 3 + rng() * 5) {
+    const pebStep = (3 + rng() * 5) * (this.isLowQuality ? 2.5 : 1);
+    for (let s = first ? -55 : 0; s < L; s += pebStep) {
       const side = rng() < 0.5 ? -1 : 1;
       const x = side * (11 + rng() * 10);
       this.localToWorld(seg, x, s, w);
@@ -486,7 +493,8 @@ export class Track {
     const s0 = first ? -50 : 0;
 
     // trail lanterns staked in the sand, alternating sides
-    for (let s = first ? -36 : 12, k = 0; s < L - 8; s += 34, k++) {
+    const lanternStep = this.isLowQuality ? 68 : 34;
+    for (let s = first ? -36 : 12, k = 0; s < L - 8; s += lanternStep, k++) {
       if (this.inGap(seg, s, -1.5)) continue;
       const post = P.makeGlowPost();
       post.position.set((k % 2 ? 1 : -1) * 5.2, 0, -s);
@@ -506,7 +514,8 @@ export class Track {
     const lat = () => (rng() < 0.5 ? -1 : 1);
 
     if (z === 'desert' || z === 'storm') {
-      for (let s = s0; s < L; s += 20) {
+      const step = this.isLowQuality ? 45 : 20;
+      for (let s = s0; s < L; s += step) {
         if (rng() < (z === 'storm' ? 0.3 : 0.5)) {
           const side = rng() < 0.5 ? -1 : 1;
           const sc = 2 + rng() * 5;
@@ -521,7 +530,8 @@ export class Track {
         if (rng() < 0.03) this.propAt(seg, P.makeWreck(rng), sideLat(rng() < 0.5 ? -1 : 1, 18, 40), s, 0.5);
       }
       // mid-distance sandstone shelves breaking the dune sea, with scree at their feet
-      for (let s = s0 + 30; s < L; s += 70 + rng() * 60) {
+      const shelfStep = (70 + rng() * 60) * (this.isLowQuality ? 1.8 : 1);
+      for (let s = s0 + 30; s < L; s += shelfStep) {
         if (rng() > (z === 'storm' ? 0.35 : 0.7)) continue;
         const x = lat() * (55 + rng() * 80);
         if (!clear(x, s, 40)) continue;
@@ -544,7 +554,8 @@ export class Track {
         }
       }
     } else if (z === 'shieldwall') {
-      for (let s = s0; s < L; s += 15) {
+      const wallStep = this.isLowQuality ? 30 : 15;
+      for (let s = s0; s < L; s += wallStep) {
         for (const side of [-1, 1]) {
           if (rng() < 0.15) continue;
           const w = 7 + rng() * 6;
@@ -555,7 +566,8 @@ export class Track {
         }
       }
     } else if (z === 'ruins') {
-      for (let s = s0 + 6; s < L - 6; s += 18) {
+      const colStep = this.isLowQuality ? 36 : 18;
+      for (let s = s0 + 6; s < L - 6; s += colStep) {
         for (const side of [-1, 1]) {
           if (rng() < 0.2) continue;
           const col = P.makeColumn(7 + rng() * 5, rng() < 0.35);
@@ -568,19 +580,22 @@ export class Track {
           this.propAt(seg, fallen, (rng() < 0.5 ? -1 : 1) * (11 + rng() * 9), s, 0.6, true);
         }
       }
-      for (let s = s0 + 30; s < L - 20; s += 70 + rng() * 30) {
+      const archStep = (70 + rng() * 30) * (this.isLowQuality ? 1.6 : 1);
+      for (let s = s0 + 30; s < L - 20; s += archStep) {
         if (this.inGap(seg, s, -3)) continue;
         this.propAt(seg, P.makeBigArch(15, 10), 0, s, 0, true);
       }
       // the drowned city: broken walls close by, watchtowers on the skyline
-      for (let s = s0 + 10; s < L - 10; s += 26 + rng() * 18) {
+      const ruinWallStep = (26 + rng() * 18) * (this.isLowQuality ? 1.8 : 1);
+      for (let s = s0 + 10; s < L - 10; s += ruinWallStep) {
         if (rng() > 0.6) continue;
         const x = lat() * (15 + rng() * 22);
         if (!clear(x, s, 12)) continue;
         const wall = this.propAt(seg, P.makeRuinWall(rng), x, s, -0.8, true);
         wall.rotation.y = (rng() < 0.6 ? 0 : Math.PI / 2) + (rng() - 0.5) * 0.4;
       }
-      for (let s = s0 + 40; s < L; s += 80 + rng() * 50) {
+      const towerStep = (80 + rng() * 50) * (this.isLowQuality ? 1.8 : 1);
+      for (let s = s0 + 40; s < L; s += towerStep) {
         if (rng() > 0.7) continue;
         const x = lat() * (70 + rng() * 110);
         if (!clear(x, s, 45)) continue;
@@ -595,7 +610,8 @@ export class Track {
         this.propAt(seg, h.group, hx, L * 0.5, -1);
         seg.animated.push({ type: 'harvester', update: h.update });
       }
-      for (let s = s0; s < L; s += 9) {
+      const patchStep = this.isLowQuality ? 20 : 9;
+      for (let s = s0; s < L; s += patchStep) {
         if (rng() < 0.6) {
           const patch = new THREE.Mesh(seg.patchGeo || (seg.patchGeo = new THREE.PlaneGeometry(1, 1)), P.mats.spicePatch);
           if (!seg.geos.includes(seg.patchGeo)) seg.geos.push(seg.patchGeo);

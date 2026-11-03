@@ -276,7 +276,7 @@ export class Runner {
     hood.scale.set(0.94, 0.98, 1.02);
     // mantle: drapes from the neck over the shoulders and back, open at the chest
     const mantleProfile = [[0.09, 0.0], [0.1, -0.05], [0.15, -0.11], [0.215, -0.16], [0.25, -0.19], [0.255, -0.215]].map(([r, y]) => new THREE.Vector2(r, y));
-    const mantle = add(head, new THREE.LatheGeometry(mantleProfile, 28, -Math.PI * 0.68, Math.PI * 1.36), hoodCloth, 0, -0.05, 0.015);
+    const mantle = (this.mantle = add(head, new THREE.LatheGeometry(mantleProfile, 28, -Math.PI * 0.68, Math.PI * 1.36), hoodCloth, 0, -0.05, 0.015));
     mantle.scale.set(1.02, 1, 0.8);
     // mask, nose plugs, mouth tube
     const mask = add(head, new THREE.SphereGeometry(0.112, 20, 10, Math.PI * 1.5 - Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.52, Math.PI * 0.3), suitDark, 0, 0.005, 0);
@@ -803,7 +803,10 @@ export class Runner {
     const hipsP = proxy(bones.pelvis, new THREE.Vector3(0, 0.955, 0), D.torso);
     // the hood kit is sized to the head: the procedural skull it was made for is 0.1 m across
     const fit = D.head.half.x / 0.1;
-    const headP = proxy(bones.Head, D.head.center.clone().setY(D.head.center.y - 0.02 * fit), fit);
+    const headCenter = D.head.center.clone();
+    headCenter.y -= 0.024 * fit;
+    headCenter.z += 0.006 * fit;
+    const headP = proxy(bones.Head, headCenter, fit);
     this.proxies = [torsoP, hipsP, headP];
     for (const o of this.torsoKit) torsoP.add(o);
     for (const o of this.hipKit) hipsP.add(o);
@@ -811,10 +814,13 @@ export class Runner {
     this.head.rotation.set(0, 0, 0);
     headP.add(this.head);
     for (const o of [...this.faceParts, ...this.maskParts, ...this.noseTubes]) o.visible = false;
-    // fitted to the real head: it is deeper than the procedural skull, so the hood sits further
-    // forward over the brow
-    this.head.scale.set(1, 1.05, 1.22);
-    this.hood.rotation.x = -0.34;
+    // fitted to the real head: sits naturally over the brow without bulging like a helmet
+    this.head.scale.set(0.98, 1.02, 1.08);
+    this.hood.rotation.x = -0.14;
+    if (this.mantle) {
+      this.mantle.scale.set(0.96, 0.88, 0.82);
+      this.mantle.position.set(0, -0.045, 0.005);
+    }
     this.pivot.visible = false;
     this.clothTorso = torsoP;
     this.clothHead = this.head;

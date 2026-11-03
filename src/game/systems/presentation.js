@@ -134,30 +134,32 @@ export const PresentationSystem = {
       const seg = p.seg, fwd = seg.fwd, right = seg.right;
       const k = clamp((this.introT % INTRO_SHOT) / INTRO_SHOT, 0, 1);
       const i = Math.max(0, this.introIdx);
+      const tall = this.introTall ?? clamp((1.0 - cam.aspect) / 0.5, 0, 1);
       this.camYaw = YAWS[seg.dir];
       if (i === 0) {
-        tp.copy(pos).addScaledVector(fwd, 34 - k * 12).addScaledVector(right, 24 - k * 6);
+        tp.copy(pos).addScaledVector(fwd, 34 - k * 12).addScaledVector(right, 24 - k * 6 - tall * 4);
         tp.y = pos.y + 15 - k * 3;
-        look.copy(pos).addScaledVector(fwd, -10);
+        look.copy(pos).addScaledVector(fwd, -10).addScaledVector(right, tall * 2);
         look.y = pos.y + 2;
       } else if (i === 1) {
-        tp.copy(pos).addScaledVector(right, 5.2).addScaledVector(fwd, -1.5 + k * 3);
+        tp.copy(pos).addScaledVector(right, 5.2 - tall * 2.4).addScaledVector(fwd, -1.5 + k * 3);
         tp.y = pos.y + 1.3;
-        look.copy(pos).addScaledVector(fwd, 1);
+        look.copy(pos).addScaledVector(fwd, 1).addScaledVector(right, -tall * 0.6);
         look.y = pos.y + 1.2;
       } else if (i === 2) {
-        tp.copy(pos).addScaledVector(fwd, 3.8 - k * 0.6).addScaledVector(right, 1.0);
+        tp.copy(pos).addScaledVector(fwd, 3.8 - k * 0.6).addScaledVector(right, 1.0 - tall * 0.7);
         tp.y = pos.y + 1.45;
         look.copy(pos);
         look.y = pos.y + 1.25;
       } else {
-        tp.copy(pos).addScaledVector(fwd, -7.4);
+        tp.copy(pos).addScaledVector(fwd, -7.4 - tall * 1.2);
         tp.y = pos.y + 3.4;
         look.copy(pos).addScaledVector(fwd, 8);
         look.y = pos.y + 1.2;
       }
       rate = i >= 3 ? 2.2 : 1.4;
-      cam.fov = damp(cam.fov, i === 2 ? 38 : i === 0 ? 50 : 55, 2, dt);
+      const baseFov = i === 2 ? 38 : i === 0 ? 50 : 55;
+      cam.fov = damp(cam.fov, baseFov + tall * 16, 2, dt);
     } else if (st === 'dying' || (st === 'over' && this.deathPos)) {
       const c = this.deathPos;
       const a = this.camYaw + (this.deathT || 0) * 0.25;

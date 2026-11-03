@@ -45,7 +45,7 @@ export class Game {
     initProps();
     loadPhotoTextures(this.renderer);
     this.terrain = new Terrain(this.scene, []);
-    this.track = new Track(this.scene, this.terrain);
+    this.track = new Track(this.scene, this.terrain, this);
     this.sky = new Sky(this.scene);
     this.runner = new Runner();
     this.scene.add(this.runner.root);
