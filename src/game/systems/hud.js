@@ -148,7 +148,7 @@ export const HudSystem = {
     const p = this.p;
     const ui = this.ui;
     // the turn arrow: shown for every corner until the turn is committed
-    const turning = seg.next && !p.pendingTurn && p.fly <= 0 && p.ride <= 0 && p.seg.length - p.s < Math.max(30, p.speed * 1.6);
+    const turning = seg.next && !p.pendingTurn && p.fly <= 0 && p.ride <= 0 && p.seg.length - p.s < Math.max(45, p.speed * 2.4);
     ui.turnHint.classList.toggle('hidden', !turning);
     if (turning) ui.turnHint.classList.toggle('left', seg.turn < 0);
     let tip = null;

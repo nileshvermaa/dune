@@ -54,7 +54,7 @@ export const ControlsSystem = {
       }
       // already on the trail's edge: toward a bend that is in sight, take it as an early turn;
       // anywhere else there is no turn, and the runner strides off the trail into the deep sand
-      if (towardBend && seg.length - p.s < Math.max(30, p.speed * 1.9)) return commitTurn();
+      if (towardBend && seg.length - p.s < Math.max(36, p.speed * 2.0)) return commitTurn();
       // a double swipe on a turn already taken (or just made) is not a step off the edge
       if (p.pendingTurn || this.time - (p.turnedAt ?? -9) < 0.7) return;
       p.strayed = dir;
@@ -100,7 +100,7 @@ export const ControlsSystem = {
   inTurnWindow() {
     const p = this.p;
     const d = p.seg.length - p.s;
-    return d < Math.max(15, p.speed * 0.95) && d > -DECK_HALF;
+    return d < Math.max(30, p.speed * 1.8) && d > -DECK_HALF;
   },
 
   // the carrier's active ability, on its cooldown

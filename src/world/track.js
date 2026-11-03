@@ -184,7 +184,26 @@ export class Track {
       const type = this.pickType(seg.zone, rng, early);
       // sinkholes never open in the old paving
       if (type === 'gap' && this.onRock(seg, s, -6)) { s += 6; continue; }
-      events.push(this.placeObstacle(seg, type, s, rng, diff));
+      const prev = events[events.length - 1];
+      const ev = this.placeObstacle(seg, type, s, rng, diff);
+      // two obstacles close together must not block every lane between them: the runner
+      // needs at least one free lane in common so there is always a way through
+      if (prev && prev.free.length && ev.free.length && s - prev.s < 28) {
+        const shared = ev.free.filter((l) => prev.free.includes(l));
+        if (shared.length === 0) {
+          // force a free lane to match the previous obstacle's escape route
+          const need = prev.free[0];
+          for (const o of seg.obstacles) {
+            if (o.s0 >= s - 1.5 && o.s0 <= s + 1.5 && o.x0 <= need * LANE_W + 0.5 && o.x1 >= need * LANE_W - 0.5) {
+              o.active = false;
+              o.mesh.visible = false;
+            }
+          }
+          if (!ev.free.includes(need)) ev.free.push(need);
+          ev.blocked = ev.blocked.filter((l) => l !== need);
+        }
+      }
+      events.push(ev);
       const v = speedAt(seg.startDist + s);
       // reaction time between obstacles tightens slowly as the run goes on
       s += obstacleSpacing(v, diff, rng);
@@ -340,14 +359,24 @@ export class Track {
     }
 
     // trail stakes down both edges, every 9 m (18 m on low); they carry on round the
-    // outside of the bend, so the corner reads from far off
+    // outside of the bend, while the inside opens early to make the turn natural and clear
     const stakes = [];
     const stakeStep = this.isLowQuality ? 18 : 9;
     for (let s = first ? 12 : 4; s < L - 2; s += stakeStep) {
       if (this.inGap(seg, s, -1.2)) continue;
-      for (const side of [-1, 1]) stakes.push([side * (HALF_W + 0.55), s, side * 0.4]);
+      for (const side of [-1, 1]) {
+        // open up the inside boundary early so the mouth of the turn is clearly visible
+        if (side === seg.turn && s > L - 8) continue;
+        stakes.push([side * (HALF_W + 0.55), s, side * 0.4]);
+      }
     }
-    for (let k = 1; k <= 3; k++) stakes.push([-seg.turn * (HALF_W + 0.55), L + k * 3, 0]);
+    // curve stakes around the outside of the bend to form a visible boundary arc
+    for (let k = 0; k <= 5; k++) {
+      const t = k / 5;
+      const arcX = -seg.turn * (HALF_W + 0.55 + t * (DECK_HALF - HALF_W + 0.6));
+      const arcS = L + t * (DECK_HALF + 1.8);
+      stakes.push([arcX, arcS, 0]);
+    }
     const im = new THREE.InstancedMesh(P.stakeGeometry(), P.mats.stake, stakes.length);
     const m4 = new THREE.Matrix4();
     stakes.forEach(([x, s, ry], i) => im.setMatrixAt(i, m4.makeRotationY(ry + (s % 5) * 0.3).setPosition(x, -0.05, -s)));
@@ -358,10 +387,10 @@ export class Track {
     g.add(im);
     seg.disposables.push(im);
 
-    // the turn: glowing arrows on the sand, a cairn on the outside, and a rock face ahead
-    const arrowGeo = new THREE.PlaneGeometry(3.2, 3.2);
+    // the turn: glowing arrows on the sand, eye-level chevrons on the rock face, and an obelisk
+    const arrowGeo = new THREE.PlaneGeometry(3.8, 3.8);
     seg.geos.push(arrowGeo);
-    for (const ss of [L - 16, L - 10, L - 4.5]) {
+    for (const ss of [L - 32, L - 24, L - 16, L - 10, L - 4.5]) {
       const arrow = new THREE.Mesh(arrowGeo, P.mats.arrow);
       arrow.position.set(0, 0.05, -ss);
       arrow.rotation.set(-Math.PI / 2, 0, seg.turn < 0 ? Math.PI : 0);
@@ -372,6 +401,24 @@ export class Track {
     const ob = P.makeObelisk();
     ob.position.set(-seg.turn * (DECK_HALF + 2.6), 0, -(L + DECK_HALF + 2.6));
     g.add(ob);
+
+    // corner guide lantern on the outside apex, clearly reading from a distance
+    const cornerLantern = P.makeGlowPost();
+    cornerLantern.position.set(-seg.turn * (HALF_W + 1.2), 0, -L);
+    cornerLantern.scale.setScalar(1.5);
+    cornerLantern.traverse((o) => { o.userData.shadow = false; });
+    g.add(cornerLantern);
+
+    // eye-level turn chevron sign on the dead-end face directly ahead, pointing toward the turn
+    const chevronGeo = new THREE.PlaneGeometry(6.4, 3.2);
+    seg.geos.push(chevronGeo);
+    const chevronSign = new THREE.Mesh(chevronGeo, P.mats.arrow);
+    chevronSign.position.set(0, 2.6, -(L + DECK_HALF + 0.8));
+    chevronSign.rotation.set(0, 0, seg.turn < 0 ? Math.PI : 0);
+    chevronSign.renderOrder = 3;
+    chevronSign.userData.shadow = false;
+    g.add(chevronSign);
+
     const cliff = P.makeRock('mesa', Math.floor(rng() * 4), 30, 26, 10);
     cliff.position.set(-seg.turn * 6, -2, -(L + DECK_HALF + 9));
     cliff.rotation.y = (rng() - 0.5) * 0.3;
@@ -506,10 +553,13 @@ export class Track {
     const sideLat = (side, near, far) => side * (side < 0 ? Math.max(near, 22) + rng() * (far - near) : near + rng() * (far - near));
     // big set pieces must stay clear of every stretch of road, including the next one after the
     // corner (not built yet, but it leaves from this segment's end)
-    const clear = (x, s, min) => {
-      if (L - s < min || s < -40) return false;
+    const clear = (x, s, min, halfW = 0) => {
+      if (Math.abs(x) - halfW < HALF_W + 1.2) return false;
+      const margin = min + halfW;
+      if (s < -40 || s > L - margin) return false;
+      if (seg.turn && Math.sign(x) === seg.turn && s > L - Math.max(margin, 45)) return false;
       const w = this.localToWorld(seg, x, s, new THREE.Vector3());
-      return this.terrain.trackDistance(w.x, w.z) >= min;
+      return this.terrain.trackDistance(w.x, w.z) >= margin;
     };
     const lat = () => (rng() < 0.5 ? -1 : 1);
 
@@ -520,14 +570,23 @@ export class Track {
           const side = rng() < 0.5 ? -1 : 1;
           const sc = 2 + rng() * 5;
           const sy = sc * (0.6 + rng() * 0.8);
-          this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), sc, sy, sc), sideLat(side, 13, 42), s, sy * 0.15).rotation.y = rng() * 6.28;
+          const bx = sideLat(side, 13, 42);
+          if (clear(bx, s, 10, sc * 0.55)) {
+            this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), sc, sy, sc), bx, s, sy * 0.15).rotation.y = rng() * 6.28;
+          }
         }
         if (rng() < 0.05) {
-          const t = P.makeThumper();
-          this.propAt(seg, t.group, 7 + rng() * 4, s, 0, true);
-          seg.animated.push({ type: 'thumper', head: t.head, phase: rng() * 6 });
+          const tx = (rng() < 0.5 ? -1 : 1) * (14 + rng() * 12);
+          if (clear(tx, s, 12, 3)) {
+            const t = P.makeThumper();
+            this.propAt(seg, t.group, tx, s, 0, true);
+            seg.animated.push({ type: 'thumper', head: t.head, phase: rng() * 6 });
+          }
         }
-        if (rng() < 0.03) this.propAt(seg, P.makeWreck(rng), sideLat(rng() < 0.5 ? -1 : 1, 18, 40), s, 0.5);
+        if (rng() < 0.03) {
+          const wx = sideLat(rng() < 0.5 ? -1 : 1, 18, 40);
+          if (clear(wx, s, 14, 5)) this.propAt(seg, P.makeWreck(rng), wx, s, 0.5);
+        }
       }
       // mid-distance sandstone shelves breaking the dune sea, with scree at their feet
       const shelfStep = (70 + rng() * 60) * (this.isLowQuality ? 1.8 : 1);
@@ -540,7 +599,10 @@ export class Track {
         shelf.rotation.y = rng() * 6.28;
         for (let k = 0; k < 4; k++) {
           const b = 1.5 + rng() * 3;
-          const rock = this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), b, b * 0.7, b), x + (rng() - 0.5) * w * 1.6, s + (rng() - 0.5) * w * 1.6, -b * 0.1, false, b * 0.5);
+          const rx = x + (rng() - 0.5) * w * 1.6;
+          const rs = s + (rng() - 0.5) * w * 1.6;
+          if (!clear(rx, rs, 10, b * 0.6)) continue;
+          const rock = this.propAt(seg, P.makeRock('boulder', Math.floor(rng() * 4), b, b * 0.7, b), rx, rs, -b * 0.1, false, b * 0.5);
           rock.rotation.y = rng() * 6.28;
         }
       }
@@ -559,10 +621,12 @@ export class Track {
         for (const side of [-1, 1]) {
           if (rng() < 0.15) continue;
           const w = 7 + rng() * 6;
+          const rx = side * (side < 0 ? 27 + rng() * 8 : 20 + rng() * 8);
+          if (!clear(rx, s, 12, w * 0.6)) continue;
           const kind = rng() < 0.5 ? 'spire' : 'boulder';
           const rock = P.makeRock(kind, Math.floor(rng() * 4), w, 16 + rng() * 26, w);
           rock.rotation.y = rng() * 6.28;
-          this.propAt(seg, rock, side * (side < 0 ? 27 + rng() * 8 : 20 + rng() * 8), s, -1);
+          this.propAt(seg, rock, rx, s, -1);
         }
       }
     } else if (z === 'ruins') {
@@ -570,19 +634,24 @@ export class Track {
       for (let s = s0 + 6; s < L - 6; s += colStep) {
         for (const side of [-1, 1]) {
           if (rng() < 0.2) continue;
+          const cx = side * 7.2;
+          if (!clear(cx, s, 6, 1.2)) continue;
           const col = P.makeColumn(7 + rng() * 5, rng() < 0.35);
-          this.propAt(seg, col, side * 7.2, s, 0, true);
+          this.propAt(seg, col, cx, s, 0, true);
         }
         if (rng() < 0.25) {
-          const fallen = P.makeColumn(6, true);
-          fallen.rotation.z = Math.PI / 2;
-          fallen.rotation.y = rng() * 6.28;
-          this.propAt(seg, fallen, (rng() < 0.5 ? -1 : 1) * (11 + rng() * 9), s, 0.6, true);
+          const fx = (rng() < 0.5 ? -1 : 1) * (11 + rng() * 9);
+          if (clear(fx, s, 8, 3.5)) {
+            const fallen = P.makeColumn(6, true);
+            fallen.rotation.z = Math.PI / 2;
+            fallen.rotation.y = rng() * 6.28;
+            this.propAt(seg, fallen, fx, s, 0.6, true);
+          }
         }
       }
       const archStep = (70 + rng() * 30) * (this.isLowQuality ? 1.6 : 1);
       for (let s = s0 + 30; s < L - 20; s += archStep) {
-        if (this.inGap(seg, s, -3)) continue;
+        if (this.inGap(seg, s, -3) || s > L - 24 || s < 20) continue;
         this.propAt(seg, P.makeBigArch(15, 10), 0, s, 0, true);
       }
       // the drowned city: broken walls close by, watchtowers on the skyline
@@ -590,7 +659,7 @@ export class Track {
       for (let s = s0 + 10; s < L - 10; s += ruinWallStep) {
         if (rng() > 0.6) continue;
         const x = lat() * (15 + rng() * 22);
-        if (!clear(x, s, 12)) continue;
+        if (!clear(x, s, 16, 9)) continue;
         const wall = this.propAt(seg, P.makeRuinWall(rng), x, s, -0.8, true);
         wall.rotation.y = (rng() < 0.6 ? 0 : Math.PI / 2) + (rng() - 0.5) * 0.4;
       }
@@ -611,7 +680,7 @@ export class Track {
         seg.animated.push({ type: 'harvester', update: h.update });
       }
       const patchStep = this.isLowQuality ? 20 : 9;
-      for (let s = s0; s < L; s += patchStep) {
+      for (let s = s0; s < L - 20; s += patchStep) {
         if (rng() < 0.6) {
           const patch = new THREE.Mesh(seg.patchGeo || (seg.patchGeo = new THREE.PlaneGeometry(1, 1)), P.mats.spicePatch);
           if (!seg.geos.includes(seg.patchGeo)) seg.geos.push(seg.patchGeo);
